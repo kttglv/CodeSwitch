@@ -1,0 +1,39 @@
+{
+  "upstream": "https://github.com/rspeer/wordfreq",
+  "version": "3.2",
+  "revision": "42233e6c36ce792031bcccfa17cdd0cec9af5fa7",
+  "files": {
+    "large_en.msgpack.gz": {
+      "url": "https://raw.githubusercontent.com/rspeer/wordfreq/42233e6c36ce792031bcccfa17cdd0cec9af5fa7/wordfreq/data/large_en.msgpack.gz",
+      "sha256": "dffae8066b78dce0a6667cf5f58e567054f902674667090a7ac8a8a44628b05c"
+    },
+    "large_ru.msgpack.gz": {
+      "url": "https://raw.githubusercontent.com/rspeer/wordfreq/42233e6c36ce792031bcccfa17cdd0cec9af5fa7/wordfreq/data/large_ru.msgpack.gz",
+      "sha256": "0440613cc765c14a20fb9483225f2fec4d85e66672809076bcec9b29119f9b43"
+    },
+    "LICENSE.txt": {
+      "url": "https://raw.githubusercontent.com/rspeer/wordfreq/42233e6c36ce792031bcccfa17cdd0cec9af5fa7/LICENSE.txt",
+      "sha256": "8990c551671a51765c4dfe9428f3e1d58dc327f49aca346a32d28cc0fcc7aa88"
+    },
+    "NOTICE.md": {
+      "url": "https://raw.githubusercontent.com/rspeer/wordfreq/42233e6c36ce792031bcccfa17cdd0cec9af5fa7/NOTICE.md",
+      "sha256": "d9b104dafe63886af55e7cea7484824e32e12d4e1f57f319923dd643b36d6b15"
+    },
+    "UPSTREAM-README.md": {
+      "url": "https://raw.githubusercontent.com/rspeer/wordfreq/42233e6c36ce792031bcccfa17cdd0cec9af5fa7/README.md",
+      "sha256": "0f1db058e1df2e6bda2db5d0ea851a7111d2390ec16a9939d971ef53ea24f684"
+    },
+    "UPSTREAM-lookup.py": {
+      "url": "https://raw.githubusercontent.com/rspeer/wordfreq/42233e6c36ce792031bcccfa17cdd0cec9af5fa7/wordfreq/__init__.py",
+      "sha256": "a50df96622a21a7bcab6a8fc8a8ce7abff8cb47e5dcf532341215640c337c1d0"
+    },
+    "APACHE-2.0.txt": {
+      "url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    "CC-BY-SA-4.0.txt": {
+      "url": "https://creativecommons.org/licenses/by-sa/4.0/legalcode.txt",
+      "sha256": "28a9529c7d0bb4dc51f4bf5c116a3d16ef247a052f7591466768ddf563fd1cf5"
+    }
+  }
+}

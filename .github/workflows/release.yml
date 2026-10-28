@@ -1,0 +1,115 @@
+name: Signed release candidates
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gate:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 scripts/check_release.py
+  macos:
+    needs: gate
+    environment: release
+    strategy:
+      matrix:
+        include:
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: npm ci
+      - name: Require signing credentials
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: python3 scripts/prepare_macos_signing.py
+      - name: Sign and notarize
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run tauri build -- --target ${{ matrix.target }} --bundles app,dmg
+      - name: Verify signature and Gatekeeper assessment
+        run: |
+          codesign --verify --deep --strict "target/${{ matrix.target }}/release/bundle/macos/CodeSwitch.app"
+          spctl --assess --type execute --verbose "target/${{ matrix.target }}/release/bundle/macos/CodeSwitch.app"
+      - run: python3 scripts/dependency_notices.py
+      - name: Remove ephemeral signing keychain
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/codeswitch-signing.keychain-db" ]; then
+            security delete-keychain "$RUNNER_TEMP/codeswitch-signing.keychain-db"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codeswitch-signed-${{ matrix.target }}
+          path: |
+            target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            artifacts/dependency-notices.json
+  windows:
+    needs: gate
+    runs-on: windows-2025
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: npm ci
+      - name: Import publisher certificate
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if (!$env:WINDOWS_CERTIFICATE -or !$env:WINDOWS_CERTIFICATE_PASSWORD) { throw 'Signing credentials are missing' }
+          $pfx = Join-Path $env:RUNNER_TEMP 'codeswitch.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $certificate = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          Remove-Item $pfx
+          $config = @{ bundle = @{ windows = @{ certificateThumbprint = $certificate.Thumbprint; digestAlgorithm = 'sha256'; timestampUrl = 'http://timestamp.digicert.com'; tsp = $true } } }
+          $config | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 'src-tauri/signing.json'
+      - run: npm run tauri build -- --target x86_64-pc-windows-msvc --bundles nsis --config src-tauri/signing.json
+      - name: Verify Authenticode
+        shell: pwsh
+        run: |
+          $files = @('target/x86_64-pc-windows-msvc/release/codeswitch.exe') + @(Get-ChildItem 'target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe' | ForEach-Object FullName)
+          foreach ($file in $files) { if ((Get-AuthenticodeSignature $file).Status -ne 'Valid') { throw "Invalid signature: $file" } }
+      - run: python scripts/dependency_notices.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codeswitch-signed-windows-x64
+          path: |
+            target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            artifacts/dependency-notices.json

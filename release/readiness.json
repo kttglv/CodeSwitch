@@ -1,0 +1,10 @@
+{
+  "approved": false,
+  "policy": "conservative-v2",
+  "benchmark_report": "benchmarks/report.json",
+  "manual_validation": {
+    "macos_apple_silicon": false,
+    "macos_intel": false,
+    "windows_11_x64": false
+  }
+}

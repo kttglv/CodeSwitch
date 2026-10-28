@@ -1,0 +1,12 @@
+[package]
+name = "codeswitch-platform"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+codeswitch-engine = { path = "../engine" }
+
+[build-dependencies]
+cc = "1"
+

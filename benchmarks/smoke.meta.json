@@ -1,0 +1,5 @@
+{
+  "held_out": false,
+  "independently_annotated": false,
+  "provenance": "Handwritten implementation smoke cases, also used during detector development. Not a release benchmark."
+}

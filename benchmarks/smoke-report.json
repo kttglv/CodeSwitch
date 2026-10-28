@@ -1,0 +1,31 @@
+{
+  "by_layout": {
+    "english": {
+      "false_negative": 0,
+      "false_positive": 0,
+      "negative_cases": 15,
+      "precision": 1.0,
+      "recall": 1.0,
+      "true_positive": 6
+    },
+    "russian": {
+      "false_negative": 0,
+      "false_positive": 0,
+      "negative_cases": 6,
+      "precision": 1.0,
+      "recall": 1.0,
+      "true_positive": 3
+    }
+  },
+  "false_negative": 0,
+  "false_positive": 0,
+  "negative_cases": 21,
+  "policy": "conservative-v2",
+  "precision": 1.0,
+  "recall": 1.0,
+  "true_positive": 9,
+  "source_sha256": "29b5218777266dc069c450359721c3e4f4a0e6bdaf745bb6c895749cb63469ff",
+  "corpus": "benchmarks/smoke.jsonl",
+  "corpus_sha256": "1b52b6e95a86bc96d3b41b50c4086403be946927eb4455b5519e1d64d15fded2",
+  "metadata_sha256": "7496b70502a96c33fdf6ba19acc1572add572b10ce264a114dadf62113089864"
+}

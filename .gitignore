@@ -1,0 +1,15 @@
+node_modules/
+dist/
+target/
+.DS_Store
+.build/
+*.log
+.env
+.env.*
+!.env.example
+artifacts/
+__pycache__/
+*.pyc
+src-tauri/gen/
+src-tauri/signing.json
+

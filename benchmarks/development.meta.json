@@ -1,0 +1,36 @@
+{
+  "held_out": false,
+  "independently_annotated": false,
+  "provenance": "Disjoint, deterministic samples from the upstream Universal Dependencies test splits, pinned by commit. Original corpus authors supply the text. Selection does not consult CodeSwitch or wordfreq; smoke words are excluded. Negative labels preserve published tokens; positive labels are synthetic keyboard remappings, not independently reviewed natural wrong-layout examples.",
+  "annotation_method": "source-derived negatives and synthetic keyboard-remapped positives",
+  "license": "Collection: English-EWT-derived records retain CC BY-SA 4.0; Russian-SynTagRus-derived records retain CC BY-NC-SA 4.0. See per-source record ranges and benchmarks/licenses. Not bundled with the application.",
+  "limitations": "Token vocabulary sample, not an estimate of live bilingual typing prevalence. No surrounding sentence context or independent human review of correction labels. Does not by itself unlock public automatic correction. This sample revealed the v1 edge-punctuation defect and is now development/regression data.",
+  "sources": [
+    {
+      "repository": "https://github.com/UniversalDependencies/UD_English-EWT",
+      "revision": "4a4d77f599ea53cc405f85d0cec4b2f14f81d42b",
+      "url": "https://raw.githubusercontent.com/UniversalDependencies/UD_English-EWT/4a4d77f599ea53cc405f85d0cec4b2f14f81d42b/en_ewt-ud-test.conllu",
+      "sha256": "fa024f43dc5da3c5ac02563bc9bd0e974f46cbb1560823976a8f342a37dc494a",
+      "negative_cases": 3000,
+      "synthetic_positive_cases": 1500,
+      "record_range": [
+        1,
+        4500
+      ],
+      "license": "CC BY-SA 4.0"
+    },
+    {
+      "repository": "https://github.com/UniversalDependencies/UD_Russian-SynTagRus",
+      "revision": "c5266a6f6f4aaa94f4dfa9b6cc863b94a5358afa",
+      "url": "https://raw.githubusercontent.com/UniversalDependencies/UD_Russian-SynTagRus/c5266a6f6f4aaa94f4dfa9b6cc863b94a5358afa/ru_syntagrus-ud-test.conllu",
+      "sha256": "97f473474d1aa8c007572cd122f90030bc7dc1707579d56b0b354c19b64af258",
+      "negative_cases": 3000,
+      "synthetic_positive_cases": 1500,
+      "record_range": [
+        4501,
+        9000
+      ],
+      "license": "CC BY-NC-SA 4.0"
+    }
+  ]
+}

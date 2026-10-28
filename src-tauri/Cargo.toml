@@ -1,0 +1,20 @@
+[package]
+name = "codeswitch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Offline English/Russian keyboard layout correction"
+build = "build.rs"
+
+[dependencies]
+codeswitch-engine = { path = "../crates/engine" }
+codeswitch-platform = { path = "../crates/platform" }
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+

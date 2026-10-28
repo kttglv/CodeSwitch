@@ -1,0 +1,36 @@
+{
+  "held_out": true,
+  "independently_annotated": false,
+  "provenance": "Deterministic samples from previously unused upstream Universal Dependencies train splits, pinned by commit. These files are used only for CodeSwitch evaluation, never detector training. Original corpus authors supply the text. Selection does not consult CodeSwitch or wordfreq. All smoke and development input/expected vocabulary is excluded case-insensitively, and positive/negative source tokens are disjoint. Negative labels preserve published tokens; positive labels are synthetic keyboard remappings, not independently reviewed natural wrong-layout examples.",
+  "annotation_method": "source-derived negatives and synthetic keyboard-remapped positives",
+  "license": "Collection: English-EWT-derived records retain CC BY-SA 4.0; Russian-SynTagRus-derived records retain CC BY-NC-SA 4.0. See per-source record ranges and benchmarks/licenses. Not bundled with the application.",
+  "limitations": "Token vocabulary sample, not an estimate of live bilingual typing prevalence. No surrounding sentence context or independent human review of correction labels. Does not by itself unlock public automatic correction.",
+  "sources": [
+    {
+      "repository": "https://github.com/UniversalDependencies/UD_English-EWT",
+      "revision": "4a4d77f599ea53cc405f85d0cec4b2f14f81d42b",
+      "url": "https://raw.githubusercontent.com/UniversalDependencies/UD_English-EWT/4a4d77f599ea53cc405f85d0cec4b2f14f81d42b/en_ewt-ud-train.conllu",
+      "sha256": "d68e06122a702464c613076523d56740f047e5bbe89dd90ec32737e04d952143",
+      "negative_cases": 3000,
+      "synthetic_positive_cases": 1500,
+      "record_range": [
+        1,
+        4500
+      ],
+      "license": "CC BY-SA 4.0"
+    },
+    {
+      "repository": "https://github.com/UniversalDependencies/UD_Russian-SynTagRus",
+      "revision": "c5266a6f6f4aaa94f4dfa9b6cc863b94a5358afa",
+      "url": "https://raw.githubusercontent.com/UniversalDependencies/UD_Russian-SynTagRus/c5266a6f6f4aaa94f4dfa9b6cc863b94a5358afa/ru_syntagrus-ud-train-a.conllu",
+      "sha256": "72be9449d83462917410e8d156ea46daeebad06a856c13a7e8bfea636c59d97c",
+      "negative_cases": 3000,
+      "synthetic_positive_cases": 1500,
+      "record_range": [
+        4501,
+        9000
+      ],
+      "license": "CC BY-NC-SA 4.0"
+    }
+  ]
+}
