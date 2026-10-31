@@ -1,6 +1,8 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <objbase.h>
+#include <oleauto.h>
 #include <UIAutomation.h>
 #include <wrl/client.h>
 #include "bridge.h"
