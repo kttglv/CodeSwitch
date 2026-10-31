@@ -32,6 +32,7 @@ pub fn spawn(shared: Arc<Shared>, app: tauri::AppHandle) {
             let settings = shared.settings.lock().unwrap().clone();
             let signature = serde_json::to_string(&settings).unwrap_or_default();
             if signature != setting_revision {
+                platform::arm_undo(false);
                 session.reset();
                 previous = None;
                 setting_revision = signature;
@@ -79,6 +80,7 @@ pub fn spawn(shared: Arc<Shared>, app: tauri::AppHandle) {
                             &transaction.action,
                         );
                         previous = Some(after.snapshot.position());
+                        platform::arm_undo(!transaction.action.undo);
                         platform::finish(true);
                         status(&shared, &app, "active");
                     } else {
@@ -234,6 +236,7 @@ fn status(shared: &Shared, app: &tauri::AppHandle, value: &str) {
 }
 
 fn pause(shared: &Shared, error: &str) {
+    platform::arm_undo(false);
     let mut settings = shared.settings.lock().unwrap();
     settings.enabled = false;
     let _ = settings.save(&shared.path);

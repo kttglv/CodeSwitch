@@ -19,15 +19,15 @@ using Microsoft::WRL::ComPtr;
 namespace {
 constexpr ULONG_PTR OWN = 0x43535748;
 constexpr ULONG_PTR END = OWN + 1;
+constexpr ULONG_PTR REPLAY = OWN + 2;
 CsCallback callback = nullptr;
 void* context = nullptr;
 std::atomic<bool> running{false}, active{false};
 std::atomic<bool> capture{false};
 std::atomic<uint64_t> revision{0};
-std::atomic<uint32_t> undoMods{3}, undoKey{8};
 std::atomic<DWORD> hookThreadId{0};
 std::mutex gateMutex;
-bool gated = false, undoHeld = false;
+bool gated = false;
 std::chrono::steady_clock::time_point gateStarted;
 std::vector<INPUT> queued;
 std::thread hookThread;
@@ -36,6 +36,7 @@ void emit(uint32_t kind) {
     CsEvent event{};
     event.revision = kind == 5 ? revision.load() : ++revision;
     event.kind = kind;
+    if (kind != 5) cs_undo_arm(0);
     if (callback) callback(&event, context);
 }
 
@@ -72,7 +73,8 @@ LRESULT CALLBACK keyboardHook(int code, WPARAM message, LPARAM data) {
     const auto& event = *reinterpret_cast<KBDLLHOOKSTRUCT*>(data);
     if (event.dwExtraInfo == END) { emit(5); return CallNextHookEx(nullptr, code, message, data); }
     if (event.dwExtraInfo == OWN) return CallNextHookEx(nullptr, code, message, data);
-    if (event.flags & LLKHF_INJECTED) { emit(3); return CallNextHookEx(nullptr, code, message, data); }
+    const bool replayed = event.dwExtraInfo == REPLAY;
+    if ((event.flags & LLKHF_INJECTED) && !replayed) { emit(3); return CallNextHookEx(nullptr, code, message, data); }
     bool up = (event.flags & LLKHF_UP) != 0;
     INPUT input{};
     input.type = INPUT_KEYBOARD;
@@ -80,14 +82,12 @@ LRESULT CALLBACK keyboardHook(int code, WPARAM message, LPARAM data) {
     input.ki.wScan = (WORD)event.scanCode;
     input.ki.dwFlags = (up ? KEYEVENTF_KEYUP : 0) | ((event.flags & LLKHF_EXTENDED) ? KEYEVENTF_EXTENDEDKEY : 0);
     input.ki.dwExtraInfo = OWN;
-    if (enqueue(input)) return 1;
+    if (!replayed && enqueue(input)) return 1;
     if (!capture) return CallNextHookEx(nullptr, code, message, data);
-    if (up) {
-        if (undoHeld && event.vkCode == undoKey) { undoHeld = false; return 1; }
-        return CallNextHookEx(nullptr, code, message, data);
-    }
     const auto mods = modifiers();
-    if (mods == undoMods && event.vkCode == undoKey) { undoHeld = true; emit(4); return 1; }
+    const auto undo = cs_undo_input(mods, event.vkCode, !up);
+    if (undo) { if (undo == 2) emit(4); return 1; }
+    if (up) return CallNextHookEx(nullptr, code, message, data);
     if (modifier(event.vkCode)) {
         return CallNextHookEx(nullptr, code, message, data);
     }
@@ -110,7 +110,8 @@ LRESULT CALLBACK keyboardHook(int code, WPARAM message, LPARAM data) {
 LRESULT CALLBACK mouseHook(int code, WPARAM message, LPARAM data) {
     if (code < 0) return CallNextHookEx(nullptr, code, message, data);
     const auto& event = *reinterpret_cast<MSLLHOOKSTRUCT*>(data);
-    if (event.dwExtraInfo == OWN || (event.flags & LLMHF_INJECTED)) return CallNextHookEx(nullptr, code, message, data);
+    const bool replayed = event.dwExtraInfo == REPLAY;
+    if (event.dwExtraInfo == OWN || ((event.flags & LLMHF_INJECTED) && !replayed)) return CallNextHookEx(nullptr, code, message, data);
     DWORD flags = 0;
     switch (message) {
         case WM_LBUTTONDOWN: flags = MOUSEEVENTF_LEFTDOWN; break;
@@ -132,7 +133,7 @@ LRESULT CALLBACK mouseHook(int code, WPARAM message, LPARAM data) {
     if (flags & (MOUSEEVENTF_WHEEL | MOUSEEVENTF_HWHEEL)) input.mi.mouseData = (DWORD)(SHORT)HIWORD(event.mouseData);
     else if (flags & (MOUSEEVENTF_XDOWN | MOUSEEVENTF_XUP)) input.mi.mouseData = HIWORD(event.mouseData);
     input.mi.dwExtraInfo = OWN;
-    if (enqueue(input)) return 1;
+    if (!replayed && enqueue(input)) return 1;
     if (!capture) return CallNextHookEx(nullptr, code, message, data);
     if (message == WM_LBUTTONDOWN || message == WM_RBUTTONDOWN || message == WM_MBUTTONDOWN || message == WM_XBUTTONDOWN || message == WM_MOUSEWHEEL || message == WM_MOUSEHWHEEL) emit(3);
     return CallNextHookEx(nullptr, code, message, data);
@@ -155,7 +156,12 @@ struct Apartment {
     }
     ~Apartment() { lastField.Reset(); automation.Reset(); if (SUCCEEDED(initialized)) CoUninitialize(); }
 };
-thread_local Apartment apartment;
+Apartment& currentApartment() {
+    // Initialize UI Automation only when the worker inspects a field, never as
+    // part of process/thread startup or an unrelated native unit test.
+    thread_local Apartment instance;
+    return instance;
+}
 struct Guard {
     ComPtr<IUIAutomationElement> element;
     ComPtr<IUIAutomationTextRange> selection;
@@ -181,6 +187,7 @@ DWORD integrity(DWORD pid) {
 }
 
 bool snapshot(CsSnapshot* output) {
+    auto& apartment = currentApartment();
     auto automation = apartment.automation;
     if (!automation) return false;
     const auto epoch = revision.load();
@@ -309,8 +316,7 @@ uint32_t cs_layouts() {
 uint64_t cs_revision() { return revision.load(); }
 int cs_snapshot(CsSnapshot* output) { return snapshot(output) ? 1 : 0; }
 void cs_release(void* handle) { delete static_cast<Guard*>(handle); }
-void cs_shortcut(uint32_t modifiers, uint32_t key) { undoMods = modifiers; undoKey = key; }
-void cs_capture(int enabled) { capture = enabled != 0; }
+void cs_capture(int enabled) { capture = enabled != 0; if (!enabled) cs_undo_clear(); }
 
 int cs_replace(const CsSnapshot* before, const uint16_t* expected, uint32_t expectedLen,
                const uint16_t* replacement, uint32_t replacementLen, uint32_t layout) {
@@ -358,6 +364,11 @@ int cs_replace(const CsSnapshot* before, const uint16_t* expected, uint32_t expe
 }
 void cs_finish(int replay) {
     std::lock_guard<std::mutex> lock(gateMutex);
+    if (!replay) cs_undo_arm(0);
+    for (auto& input : queued) {
+        if (input.type == INPUT_KEYBOARD) input.ki.dwExtraInfo = REPLAY;
+        else input.mi.dwExtraInfo = REPLAY;
+    }
     if (replay && !queued.empty()) SendInput((UINT)queued.size(), queued.data(), sizeof(INPUT));
     queued.clear(); gated = false;
 }

@@ -45,6 +45,7 @@ unsafe extern "C" {
     fn cs_finish(replay: i32);
     fn cs_shortcut(modifiers: u32, key: u32);
     fn cs_capture(enabled: i32);
+    fn cs_undo_arm(available: i32);
 }
 
 pub enum EventKind {
@@ -113,6 +114,9 @@ pub fn finish(replay: bool) {
 }
 pub fn capture(enabled: bool) {
     unsafe { cs_capture(i32::from(enabled)) }
+}
+pub fn arm_undo(available: bool) {
+    unsafe { cs_undo_arm(i32::from(available)) }
 }
 
 pub fn shortcut(value: &str) -> Result<(), String> {
@@ -214,6 +218,64 @@ impl Focus {
                 "The operating system could not complete text replacement. Correction is paused."
                     .into(),
             ),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    unsafe extern "C" {
+        fn cs_undo_input(modifiers: u32, key: u32, down: i32) -> i32;
+        fn cs_undo_clear();
+    }
+
+    #[test]
+    fn native_undo_is_available_only_once_after_an_explicit_arm() {
+        // Exercise the same native state machine used by both OS hooks without
+        // installing a hook or generating input on the developer's computer.
+        unsafe {
+            cs_undo_clear();
+            cs_shortcut(3, 8);
+            assert_eq!(cs_undo_input(3, 8, 1), 0, "ordinary shortcuts pass through");
+            assert_eq!(cs_undo_input(0, 8, 0), 0);
+
+            cs_undo_arm(1);
+            assert_eq!(cs_undo_input(1, 8, 1), 0, "wrong modifiers pass through");
+            assert_eq!(cs_undo_input(3, 8, 1), 2, "one undo request");
+            assert_eq!(cs_undo_input(3, 8, 1), 1, "held-key repeats are consumed");
+            assert_eq!(
+                cs_undo_input(0, 8, 1),
+                1,
+                "releasing modifiers cannot turn a consumed key into deletion"
+            );
+            assert_eq!(cs_undo_input(0, 8, 0), 1, "matching release is consumed");
+            assert_eq!(cs_undo_input(3, 8, 1), 0, "record was already consumed");
+
+            cs_undo_arm(1);
+            cs_undo_arm(0);
+            assert_eq!(cs_undo_input(3, 8, 1), 0, "typing/reset invalidates undo");
+
+            cs_undo_arm(1);
+            assert_eq!(cs_undo_input(3, 8, 1), 2);
+            cs_shortcut(6, 119);
+            assert_eq!(
+                cs_undo_input(0, 8, 0),
+                1,
+                "a settings change preserves the old key-up pair"
+            );
+            assert_eq!(
+                cs_undo_input(6, 119, 1),
+                0,
+                "settings changes disarm the old record"
+            );
+            cs_undo_arm(1);
+            assert_eq!(cs_undo_input(6, 119, 1), 2);
+            cs_undo_clear();
+            assert_eq!(cs_undo_input(0, 119, 0), 0, "pause clears held-key state");
+            assert_eq!(cs_undo_input(6, 119, 1), 0);
+            cs_shortcut(if cfg!(target_os = "macos") { 10 } else { 3 }, 8);
         }
     }
 }

@@ -34,5 +34,9 @@ int cs_replace(const CsSnapshot* before, const uint16_t* expected, uint32_t expe
 // Release queued hardware input only after the Rust worker verifies the result.
 void cs_finish(int replay);
 void cs_shortcut(uint32_t modifiers, uint32_t key); // Ctrl=1 Alt=2 Shift=4 Meta=8
+void cs_undo_arm(int available);
+void cs_undo_clear();
+// 0: pass through, 1: consume release/repeat, 2: consume and request undo.
+int cs_undo_input(uint32_t modifiers, uint32_t key, int down);
 void cs_capture(int enabled); // Paused hooks forward input without collecting events.
 }
