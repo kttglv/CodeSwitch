@@ -144,16 +144,14 @@ fn save_settings(
 }
 
 fn main() {
+    let autostart = tauri_plugin_autostart::Builder::new().args(["--background"]);
+    #[cfg(target_os = "macos")]
+    let autostart = autostart.macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent);
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             show_window(app)
         }))
-        .plugin(
-            tauri_plugin_autostart::Builder::new()
-                .macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent)
-                .args(["--background"])
-                .build(),
-        )
+        .plugin(autostart.build())
         .invoke_handler(tauri::generate_handler![
             get_status,
             request_permission,
