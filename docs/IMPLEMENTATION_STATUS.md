@@ -1,4 +1,4 @@
-# Implementation status — October 28, 2026
+# Implementation status — October 30, 2026
 
 CodeSwitch 0.1.0 is a **development preview**, not a validated public release.
 
@@ -10,8 +10,9 @@ CodeSwitch 0.1.0 is a **development preview**, not a validated public release.
   protected-field checks, app exclusions and local settings.
 - Tauri settings/onboarding, tray controls, startup preference, shortcut validation
   and an isolated word test box. No accounts, cloud inference or typing logs.
-- macOS arm64 app/DMG builds; macOS x64 cross-compilation check passes.
-- 11 Rust tests and 6 Python release-gate tests pass; Clippy and TypeScript/Vite
+- macOS arm64 and Intel app/DMG builds pass in GitHub Actions. An updated arm64
+  preview is also built locally.
+- 12 Rust tests and 6 Python release-gate tests pass; Clippy and TypeScript/Vite
   production build pass. Bundled original wordfreq resource checksums pass.
 - Desktop UI tested on this Mac: both conversion directions in the word test box,
   uppercase preservation, layout recognition, invalid-shortcut rejection, valid
@@ -20,6 +21,13 @@ CodeSwitch 0.1.0 is a **development preview**, not a validated public release.
   `codesign --verify --deep --strict`. This is not Developer ID signing/notarization.
 - macOS arm64/x64 and Windows x64 build/test workflows, release approval gate,
   credential-based signing workflows and dependency license inventory are supplied.
+- Windows CI builds/tests the native adapter after fixes to COM-header ordering
+  and macOS-only launch-agent configuration. Inspection of the first successful
+  installer identified an unbundled `MSVCP140.dll` dependency; Windows packages now
+  enable Tauri's C++ runtime bundling.
+- Undo shortcuts pass through when no immediately reversible correction exists.
+  Shared native tests cover shortcut repeats, modifier release, configuration
+  changes and pause. Replayed typing goes through normal buffer invalidation.
 
 ## Engineering evaluation
 
@@ -46,15 +54,15 @@ punctuation defect; it is now development data with a retained historical baseli
 
 - Live system-wide macOS correction/undo, secure-field and concurrency validation.
   Accessibility access was requested, but the app continued to report it unavailable.
-  Computer-use access to System Settings was not approved. The user chose to finish
-  without further live keyboard testing. Global correction remains paused.
+  The user chose to finish without further live keyboard testing. Global correction
+  remains paused.
 - Actual Intel Mac and Windows 11 runtime validation, including the documented
-  application matrix. Windows adapter compilation is configured in CI but was not
-  executed in this Mac-only environment.
+  application matrix. CI builds do not establish real-app typing compatibility.
 - Independent review/evaluation of natural wrong-layout typing, platform approvals,
   Developer ID notarization and Windows publisher signing using maintainer credentials.
-- Attach reviewed, signed installers to a GitHub Release. No repository or release
-  was created or published during this implementation.
+- Attach reviewed, signed installers to a GitHub Release. The private repository
+  has a draft [implementation fix PR](https://github.com/kttglv/CodeSwitch/pull/1);
+  no public release has been published.
 
 `release/readiness.json` remains unapproved. Production builds cannot enable global
 automatic correction until the release gate passes. Debug builds offer an explicit
