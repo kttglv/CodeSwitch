@@ -266,23 +266,31 @@ fn status(shared: &Shared, app: &tauri::AppHandle, value: &str) {
     }
 }
 
-fn tooltip(shared: &Shared, app: &tauri::AppHandle) {
+pub(crate) fn tooltip(shared: &Shared, app: &tauri::AppHandle) {
     let Some(tray) = app.tray_by_id("codeswitch") else {
         return;
     };
-    let label = match shared.status.lock().unwrap().as_str() {
-        "active" => "Ready to switch",
-        "paused" => "Paused",
-        "excluded-app" => "Paused in excluded app",
-        "suspended-app" => "Paused in this app after an unverified edit",
-        "unsupported-field" => "Waiting for a supported field",
-        _ => "Needs keyboard access",
+    let russian = shared.russian_ui.load(Ordering::Relaxed);
+    let label = match (shared.status.lock().unwrap().as_str(), russian) {
+        ("active", false) => "Ready to switch",
+        ("active", true) => "Готово к работе",
+        ("paused", false) => "Paused",
+        ("paused", true) => "На паузе",
+        ("excluded-app", false) => "Paused in excluded app",
+        ("excluded-app", true) => "Пауза в исключённом приложении",
+        ("suspended-app", false) => "Paused in this app after an unverified edit",
+        ("suspended-app", true) => "Пауза в этом приложении после непроверенной правки",
+        ("unsupported-field", false) => "Waiting for a supported field",
+        ("unsupported-field", true) => "Ожидание поддерживаемого поля",
+        (_, false) => "Needs keyboard access",
+        (_, true) => "Нужен доступ к клавиатуре",
     };
     let count = shared.corrections.load(Ordering::Relaxed);
-    let _ = tray.set_tooltip(Some(match count {
-        0 => format!("CodeSwitch · {label}"),
-        1 => format!("CodeSwitch · {label} · 1 word corrected"),
-        n => format!("CodeSwitch · {label} · {n} words corrected"),
+    let _ = tray.set_tooltip(Some(match (count, russian) {
+        (0, _) => format!("CodeSwitch · {label}"),
+        (n, true) => format!("CodeSwitch · {label} · исправлено слов: {n}"),
+        (1, false) => format!("CodeSwitch · {label} · 1 word corrected"),
+        (n, false) => format!("CodeSwitch · {label} · {n} words corrected"),
     }));
 }
 

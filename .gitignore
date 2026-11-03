@@ -14,3 +14,12 @@ src-tauri/gen/
 src-tauri/signing.json
 .codeswitch-signing/
 
+
+# Signing material and local tool settings must never be committed
+*.pfx
+*.p12
+*.p8
+*.cer
+*.keychain-db
+*.mobileprovision
+.claude/settings.local.json

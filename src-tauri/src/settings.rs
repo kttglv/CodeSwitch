@@ -26,6 +26,19 @@ pub struct Settings {
     /// Add a word to `ignored_words` when the user undoes its automatic correction.
     #[serde(default = "default_true")]
     pub learn_from_undo: bool,
+    /// Interface language: "system", "en" or "ru".
+    #[serde(default = "default_system")]
+    pub language: String,
+    /// Interface appearance: "system", "light" or "dark".
+    #[serde(default = "default_system")]
+    pub theme: String,
+}
+
+pub const LANGUAGES: &[&str] = &["system", "en", "ru"];
+pub const THEMES: &[&str] = &["system", "light", "dark"];
+
+fn default_system() -> String {
+    "system".into()
 }
 
 fn default_true() -> bool {
@@ -60,6 +73,8 @@ impl Default for Settings {
             convert_shortcut: default_convert_shortcut(),
             ignored_words: Vec::new(),
             learn_from_undo: true,
+            language: default_system(),
+            theme: default_system(),
         }
     }
 }
@@ -97,6 +112,9 @@ impl Settings {
             return Err(format!(
                 "Use up to {MAX_IGNORED_WORDS} words of up to {MAX_WORD_CHARS} characters"
             ));
+        }
+        if !LANGUAGES.contains(&self.language.as_str()) || !THEMES.contains(&self.theme.as_str()) {
+            return Err("Choose a supported language and appearance".into());
         }
         let parent = path.parent().ok_or("Invalid settings directory")?;
         std::fs::create_dir_all(parent).map_err(|_| "Cannot create the settings directory")?;
@@ -267,6 +285,44 @@ mod tests {
             Settings::default().convert_shortcut
         );
         assert!(settings.ignored_words.is_empty() && settings.learn_from_undo);
+    }
+
+    #[test]
+    fn existing_settings_gain_interface_defaults_and_reject_unknown_values() {
+        let mut json = serde_json::to_value(Settings::default()).unwrap();
+        let object = json.as_object_mut().unwrap();
+        object.remove("language");
+        object.remove("theme");
+        let settings: Settings = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            (settings.language.as_str(), settings.theme.as_str()),
+            ("system", "system")
+        );
+        let directory =
+            std::env::temp_dir().join(format!("codeswitch-interface-{}", std::process::id()));
+        let path = directory.join("settings.json");
+        let bad = Settings {
+            language: "de".into(),
+            ..Settings::default()
+        };
+        assert!(bad.save(&path).is_err());
+        let bad = Settings {
+            theme: "blue".into(),
+            ..Settings::default()
+        };
+        assert!(bad.save(&path).is_err());
+        let good = Settings {
+            language: "ru".into(),
+            theme: "dark".into(),
+            ..Settings::default()
+        };
+        assert!(good.save(&path).is_ok());
+        let loaded = Settings::load(&path).unwrap();
+        assert_eq!(
+            (loaded.language.as_str(), loaded.theme.as_str()),
+            ("ru", "dark")
+        );
+        let _ = std::fs::remove_dir_all(directory);
     }
 
     fn action(expected: &str, replacement: &str) -> Action {

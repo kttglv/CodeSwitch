@@ -1,5 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { language, plural, resolveLanguage, setLanguage, t, translateDocument, type Key, type LanguageSetting } from "./i18n";
 import "./style.css";
 
 type Layout = "english" | "russian";
@@ -15,7 +17,10 @@ interface Settings {
   convertShortcut: string;
   ignoredWords: string[];
   learnFromUndo: boolean;
+  language: LanguageSetting;
+  theme: ThemeSetting;
 }
+type ThemeSetting = "system" | "light" | "dark";
 interface Status {
   settings: Settings;
   platform: string;
@@ -38,7 +43,7 @@ interface Candidate { original: string; replacement: string; target: Layout }
 
 const native = isTauri();
 let status: Status = {
-  settings: { enabled: false, launchAtLogin: false, undoShortcut: "Meta+Alt+Backspace", excludedApps: [], allowedApps: [], previewConsent: false, onboardingComplete: false, automaticUpdateChecks: true, convertShortcut: "Ctrl+Meta+Backspace", ignoredWords: [], learnFromUndo: true },
+  settings: { enabled: false, launchAtLogin: false, undoShortcut: "Meta+Alt+Backspace", excludedApps: [], allowedApps: [], previewConsent: false, onboardingComplete: false, automaticUpdateChecks: true, convertShortcut: "Ctrl+Meta+Backspace", ignoredWords: [], learnFromUndo: true, language: "system", theme: "system" },
   platform: "macos", permissionGranted: false, hookActive: false, englishInstalled: false, russianInstalled: false,
   publicReleaseApproved: false, developmentBuild: false, state: "paused", lastError: null, defaultExclusions: [],
   version: "0.1.0", updates: { phase: "", version: null, notes: null, downloaded: 0, total: null, message: null },
@@ -72,93 +77,101 @@ function element<T extends HTMLElement = HTMLElement>(id: string): T {
 
 element("app").innerHTML = `
   <aside class="sidebar">
-    <a class="brand" href="#overview" aria-label="CodeSwitch overview"><span class="brand-mark">${icon("arrow")}</span>CodeSwitch</a>
-    <div class="nav-caption">WORKSPACE</div>
+    <a class="brand" href="#overview" data-i18n-label="brand.label"><span class="brand-mark">${icon("arrow")}</span>CodeSwitch</a>
+    <div class="nav-caption" data-i18n="nav.caption"></div>
     <nav aria-label="Main navigation">
-      <button data-page="overview" class="nav-item selected">${icon("overview")}Overview</button>
-      <button data-page="preferences" class="nav-item">${icon("settings")}Preferences</button>
-      <button data-page="exclusions" class="nav-item">${icon("apps")}App exclusions</button>
-      <button data-page="words" class="nav-item">${icon("words")}Words</button>
-      <button data-page="about" class="nav-item">${icon("shield")}Privacy & about</button>
+      <button data-page="overview" class="nav-item selected">${icon("overview")}<span data-i18n="nav.overview"></span></button>
+      <button data-page="preferences" class="nav-item">${icon("settings")}<span data-i18n="nav.preferences"></span></button>
+      <button data-page="exclusions" class="nav-item">${icon("apps")}<span data-i18n="nav.exclusions"></span></button>
+      <button data-page="words" class="nav-item">${icon("words")}<span data-i18n="nav.words"></span></button>
+      <button data-page="about" class="nav-item">${icon("shield")}<span data-i18n="nav.about"></span></button>
     </nav>
-    <div class="sidebar-bottom"><div class="local-note">${icon("shield")}On your device. Always.</div><span class="version"><span id="app-version">CodeSwitch 0.1.0</span> <span>Preview</span></span></div>
+    <div class="sidebar-bottom"><div class="local-note">${icon("shield")}<span data-i18n="sidebar.local"></span></div><span class="version"><span id="app-version">CodeSwitch 0.1.0</span> <span data-i18n="sidebar.preview"></span></span></div>
   </aside>
   <div class="workspace">
-    <header class="topbar"><span id="page-title">Overview</span><div class="language-pair"><span class="language-dot"></span>EN<span class="pair-arrow">↔</span>RU</div></header>
+    <header class="topbar"><span id="page-title"></span><div class="language-pair"><span class="language-dot"></span>EN<span class="pair-arrow">↔</span>RU</div></header>
     <main>
-      <div id="browser-notice" class="notice" hidden>You're viewing the interface in a browser. Open the desktop app to check permissions and try correction.</div>
+      <div id="browser-notice" class="notice" data-i18n="browser.notice" hidden></div>
       <div id="error" class="error" role="alert" hidden></div>
       <div id="suspended" role="status"></div>
-      <div id="update-notice" class="notice update-notice" role="status" hidden><span id="update-notice-text"></span><button id="view-update" class="text-button">View update</button></div>
+      <div id="update-notice" class="notice update-notice" role="status" hidden><span id="update-notice-text"></span><button id="view-update" class="text-button" data-i18n="update.view"></button></div>
       <section id="page-overview" class="page">
-        <div class="eyebrow">A LITTLE LESS FRICTION</div>
-        <h1>Your words.<br>The right language.</h1>
-        <p class="intro">Stay in your flow. CodeSwitch catches the wrong keyboard<br class="wide-break"> layout and puts your words back where they belong.</p>
+        <div class="eyebrow" data-i18n="overview.eyebrow"></div>
+        <h1 data-i18n="overview.title"></h1>
+        <p class="intro" data-i18n="overview.intro"></p>
         <div class="control-card">
           <div class="control-symbol">${icon("arrow")}</div>
-          <div class="control-copy"><h2>Automatic correction</h2><p id="correction-description">Paused. Your keyboard is all yours.</p></div>
-          <button id="enabled" class="switch" role="switch" aria-checked="false" aria-label="Automatic correction"><span></span></button>
-          <div class="control-footer"><span id="status" class="status-pill"><i></i>Paused</span><span id="correction-count">English <span class="pair-arrow">↔</span> Russian</span></div>
+          <div class="control-copy"><h2 data-i18n="control.title"></h2><p id="correction-description"></p></div>
+          <button id="enabled" class="switch" role="switch" aria-checked="false" data-i18n-label="control.title"><span></span></button>
+          <div class="control-footer"><span id="status" class="status-pill"><i></i></span><span id="correction-count"></span></div>
         </div>
         <div id="setup" class="setup-card">
-          <div class="section-heading"><h2>A quick setup</h2><span id="setup-progress" class="muted">0 of 2 ready</span></div>
-          <div class="setup-row"><span id="permission-check" class="step-number">1</span><div><h3>Allow keyboard access</h3><p id="permission-description">Permission lets CodeSwitch correct text in other apps.</p></div><button id="permission" class="button small">Grant access ${icon("chevron")}</button></div>
-          <div class="setup-row"><span id="layout-check" class="step-number">2</span><div><h3>Add both keyboard layouts</h3><p id="layout-description">US English and standard Russian ЙЦУКЕН.</p></div><button id="layout-help" class="text-button">How to add ${icon("chevron")}</button></div>
+          <div class="section-heading"><h2 data-i18n="setup.title"></h2><span id="setup-progress" class="muted"></span></div>
+          <div class="setup-row"><span id="permission-check" class="step-number">1</span><div><h3 data-i18n="setup.permission"></h3><p id="permission-description"></p></div><button id="permission" class="button small"></button></div>
+          <div class="setup-row"><span id="layout-check" class="step-number">2</span><div><h3 data-i18n="setup.layouts"></h3><p id="layout-description"></p></div><button id="layout-help" class="text-button"><span data-i18n="setup.howTo"></span> ${icon("chevron")}</button></div>
           <div id="layout-instructions" class="help" hidden></div>
-          <label id="preview-consent-row" class="preview-consent" hidden><input id="preview-consent" type="checkbox"> <span>I want to test automatic correction in this development build. I understand it may make mistakes.</span></label>
-          <div class="setup-bottom"><span id="release-note">Automatic correction is awaiting public release validation.</span><button id="finish-setup" class="button primary small">Finish setup</button></div>
+          <label id="preview-consent-row" class="preview-consent" hidden><input id="preview-consent" type="checkbox"> <span data-i18n="setup.consent"></span></label>
+          <div class="setup-bottom"><span id="release-note"></span><button id="finish-setup" class="button primary small"></button></div>
         </div>
         <div class="demo-card">
-          <div class="section-heading"><h2>See the switch</h2><span class="tiny-badge">OFFLINE</span></div>
-          <p class="muted">Same keys. What you meant to say.</p>
+          <div class="section-heading"><h2 data-i18n="demo.title"></h2><span class="tiny-badge" data-i18n="demo.offline"></span></div>
+          <p class="muted" data-i18n="demo.subtitle"></p>
           <div class="demo-conversion"><span class="wrong-word">ghbdtn</span><span class="demo-arrow">${icon("arrow")}</span><span class="right-word" lang="ru">привет<span class="cursor"></span></span></div>
-          <div class="try-area"><label for="test-word">Try a word</label><div class="test-controls"><input id="test-word" value="ghbdtn" placeholder="A word in the wrong layout" maxlength="64" autocomplete="off" spellcheck="false" autocapitalize="off"><select id="test-layout" aria-label="Current keyboard layout"><option value="english">Typed in EN</option><option value="russian">Typed in RU</option></select></div><div id="test-result" class="test-result" aria-live="polite">Open the desktop app to try the detector.</div></div>
-          <div class="demo-footer">${icon("keyboard")}Correction happens after a word.<span id="convert-hint"></span><span id="undo-hint"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>⌫</kbd> to undo</span></div>
+          <div class="try-area"><label for="test-word" data-i18n="demo.try"></label><div class="test-controls"><input id="test-word" value="ghbdtn" data-i18n-placeholder="demo.placeholder" maxlength="64" autocomplete="off" spellcheck="false" autocapitalize="off"><select id="test-layout" data-i18n-label="demo.layout"><option value="english" data-i18n="demo.typedEn"></option><option value="russian" data-i18n="demo.typedRu"></option></select></div><div id="test-result" class="test-result" aria-live="polite"></div></div>
+          <div class="demo-footer">${icon("keyboard")}<span class="demo-after" data-i18n="demo.after"></span><span id="convert-hint"></span><span id="undo-hint"></span></div>
         </div>
-        <div class="privacy-line">${icon("shield")}Your typing stays on your device. No cloud. No typing history.</div>
+        <div class="privacy-line">${icon("shield")}<span data-i18n="privacy.line"></span></div>
       </section>
       <section id="page-preferences" class="page" hidden>
-        <div class="eyebrow">MAKE IT YOURS</div><h1>Quietly, in the<br>background.</h1><p class="intro">A few small preferences. Then, back to your words.</p>
-        <div class="panel"><div class="preference-row"><div><h2>Launch at login</h2><p>Keep CodeSwitch in your menu bar or system tray.</p></div><input id="launch-at-login" class="checkbox" type="checkbox" aria-label="Launch at login"></div><div class="preference-row"><div><h2>Undo shortcut</h2><p>Restore the last correction and its previous keyboard layout.<br>Available until you type again or move the caret.</p></div><input id="undo-shortcut" class="shortcut-input" aria-label="Undo shortcut" placeholder="Meta+Alt+Backspace"></div><div class="preference-row"><div><h2>Convert shortcut</h2><p>Convert the word before the caret to the other layout, even when<br>automatic correction left it unchanged. Press again to switch back.<br>Leave empty to turn it off.</p></div><input id="convert-shortcut" class="shortcut-input" aria-label="Convert shortcut" placeholder="Off"></div><div class="panel-footer"><span class="muted">Modifiers: Ctrl, Alt, Shift, Meta. Keys: Backspace, F8–F10.</span><button id="save-preferences" class="button primary">Save preferences</button></div></div>
-        <div class="info-card">${icon("info")}<p>Correction favors certainty. Short words, names, unfamiliar words, and matches that could belong to either language are left unchanged — use the convert shortcut for those. Enter and Tab never trigger correction.</p></div>
+        <div class="eyebrow" data-i18n="prefs.eyebrow"></div><h1 data-i18n="prefs.title"></h1><p class="intro" data-i18n="prefs.intro"></p>
+        <div class="panel interface-panel">
+          <div class="section-heading"><h2 data-i18n="interface.title"></h2></div>
+          <div class="preference-row"><div><h3 data-i18n="interface.language"></h3><p data-i18n="interface.languageHint"></p></div><div class="segmented" id="language-choice" role="radiogroup" data-i18n-label="interface.language"><button role="radio" data-value="system" data-i18n="interface.system"></button><button role="radio" data-value="en" lang="en">English</button><button role="radio" data-value="ru" lang="ru">Русский</button></div></div>
+          <div class="preference-row"><div><h3 data-i18n="interface.appearance"></h3><p data-i18n="interface.appearanceHint"></p></div><div class="segmented" id="theme-choice" role="radiogroup" data-i18n-label="interface.appearance"><button role="radio" data-value="system" data-i18n="interface.system"></button><button role="radio" data-value="light" data-i18n="interface.light"></button><button role="radio" data-value="dark" data-i18n="interface.dark"></button></div></div>
+        </div>
+        <div class="panel"><div class="preference-row"><div><h2 data-i18n="prefs.launch"></h2><p data-i18n="prefs.launchHint"></p></div><input id="launch-at-login" class="checkbox" type="checkbox" data-i18n-label="prefs.launch"></div><div class="preference-row"><div><h2 data-i18n="prefs.undo"></h2><p data-i18n="prefs.undoHint"></p></div><input id="undo-shortcut" class="shortcut-input" data-i18n-label="prefs.undo" placeholder="Meta+Alt+Backspace"></div><div class="preference-row"><div><h2 data-i18n="prefs.convert"></h2><p data-i18n="prefs.convertHint"></p></div><input id="convert-shortcut" class="shortcut-input" data-i18n-label="prefs.convert" data-i18n-placeholder="prefs.off"></div><div class="panel-footer"><span class="muted" data-i18n="prefs.keys"></span><button id="save-preferences" class="button primary" data-i18n="prefs.save"></button></div></div>
+        <div class="info-card">${icon("info")}<p data-i18n="prefs.info"></p></div>
         <div class="panel updates-panel">
-          <div class="section-heading"><h2>App updates</h2><span id="update-current-version" class="muted"></span></div>
-          <div class="preference-row"><div><h3>Check automatically</h3><p>Check GitHub Releases at startup and once a day.<br>Your typing is never included in update requests.</p></div><input id="automatic-update-checks" class="checkbox" type="checkbox" aria-label="Check for updates automatically"></div>
-          <p id="update-status" class="update-status" role="status" aria-live="polite">Check for a new version of CodeSwitch.</p>
-          <progress id="update-progress" max="100" hidden aria-label="Update download progress"></progress>
+          <div class="section-heading"><h2 data-i18n="updates.title"></h2><span id="update-current-version" class="muted"></span></div>
+          <div class="preference-row"><div><h3 data-i18n="updates.auto"></h3><p data-i18n="updates.autoHint"></p></div><input id="automatic-update-checks" class="checkbox" type="checkbox" data-i18n-label="updates.autoLabel"></div>
+          <p id="update-status" class="update-status" role="status" aria-live="polite"></p>
+          <progress id="update-progress" max="100" hidden data-i18n-label="updates.progress"></progress>
           <p id="update-notes" class="update-notes" hidden></p>
-          <div class="update-actions"><button id="check-updates" class="button">Check for updates</button><button id="install-update" class="button primary" hidden>Update and restart</button></div>
-          <p class="muted update-footnote">Packages are verified before installation. CodeSwitch restarts only when you choose to install.</p>
+          <div class="update-actions"><button id="check-updates" class="button" data-i18n="updates.check"></button><button id="install-update" class="button primary" data-i18n="updates.install" hidden></button></div>
+          <p class="muted update-footnote" data-i18n="updates.footnote"></p>
         </div>
       </section>
       <section id="page-exclusions" class="page" hidden>
-        <div class="eyebrow">A PLACE FOR EVERYTHING</div><h1>Choose where<br>it works.</h1><p class="intro">Terminals and code editors are excluded by default.<br>Allow an app or add an exclusion using its exact identifier.</p>
-        <div class="panel app-form"><label for="app-id">App identifier</label><div class="app-controls"><input id="app-id" placeholder="com.example.app or example.exe" maxlength="500" spellcheck="false"><select id="app-rule" aria-label="Rule"><option value="exclude">Exclude app</option><option value="allow">Allow app</option></select><button id="add-app" class="button primary">Add</button></div><p class="muted">macOS: bundle identifier. Windows: executable filename. Explicit exclusions take priority.</p></div>
-        <div class="panel"><div class="section-heading"><h2>Your app rules</h2><span id="rule-count" class="muted">0 rules</span></div><div id="custom-apps" class="app-list"></div></div>
-        <details class="panel default-apps"><summary>Default exclusions <span class="muted">Terminals & development tools</span></summary><div id="default-apps" class="app-list"></div></details>
+        <div class="eyebrow" data-i18n="apps.eyebrow"></div><h1 data-i18n="apps.title"></h1><p class="intro" data-i18n="apps.intro"></p>
+        <div class="panel app-form"><label for="app-id" data-i18n="apps.identifier"></label><div class="app-controls"><input id="app-id" data-i18n-placeholder="apps.placeholder" maxlength="500" spellcheck="false"><select id="app-rule" data-i18n-label="apps.rule"><option value="exclude" data-i18n="apps.exclude"></option><option value="allow" data-i18n="apps.allow"></option></select><button id="add-app" class="button primary" data-i18n="apps.add"></button></div><p class="muted" data-i18n="apps.help"></p></div>
+        <div class="panel"><div class="section-heading"><h2 data-i18n="apps.yours"></h2><span id="rule-count" class="muted"></span></div><div id="custom-apps" class="app-list"></div></div>
+        <details class="panel default-apps"><summary><span data-i18n="apps.defaults"></span> <span class="muted" data-i18n="apps.defaultsHint"></span></summary><div id="default-apps" class="app-list"></div></details>
       </section>
       <section id="page-words" class="page" hidden>
-        <div class="eyebrow">YOUR VOCABULARY</div><h1>Words to<br>leave alone.</h1><p class="intro">Names, slang and jargon you never want switched.<br>Add a word as you type it, or as it would be converted — either works.</p>
-        <div class="panel"><div class="preference-row"><div><h2>Learn from undo</h2><p>When you undo an automatic correction, add that word here<br>so CodeSwitch leaves it alone next time.</p></div><input id="learn-from-undo" class="checkbox" type="checkbox" aria-label="Learn from undo"></div></div>
-        <div class="panel app-form"><label for="word-entry">Word</label><div class="app-controls"><input id="word-entry" placeholder="e.g. Vfrc or Макс" maxlength="64" autocomplete="off" spellcheck="false" autocapitalize="off"><button id="add-word" class="button primary">Add</button></div><p class="muted">Matching ignores capitalization and surrounding punctuation. Words are stored only in your local settings file.</p></div>
-        <div class="panel"><div class="section-heading"><h2>Your words</h2><span><span id="word-count" class="muted">0 words</span> <button id="clear-words" class="text-button" hidden>Clear all</button></span></div><div id="word-list" class="app-list"></div></div>
+        <div class="eyebrow" data-i18n="words.eyebrow"></div><h1 data-i18n="words.title"></h1><p class="intro" data-i18n="words.intro"></p>
+        <div class="panel"><div class="preference-row"><div><h2 data-i18n="words.learn"></h2><p data-i18n="words.learnHint"></p></div><input id="learn-from-undo" class="checkbox" type="checkbox" data-i18n-label="words.learn"></div></div>
+        <div class="panel app-form"><label for="word-entry" data-i18n="words.word"></label><div class="app-controls"><input id="word-entry" data-i18n-placeholder="words.placeholder" maxlength="64" autocomplete="off" spellcheck="false" autocapitalize="off"><button id="add-word" class="button primary" data-i18n="apps.add"></button></div><p class="muted" data-i18n="words.help"></p></div>
+        <div class="panel"><div class="section-heading"><h2 data-i18n="words.yours"></h2><span><span id="word-count" class="muted"></span> <button id="clear-words" class="text-button" data-i18n="words.clear" hidden></button></span></div><div id="word-list" class="app-list"></div></div>
       </section>
       <section id="page-about" class="page" hidden>
-        <div class="eyebrow">BUILT ON TRUST</div><h1>Your words<br>stay yours.</h1><p class="intro">A small, open-source utility. No account needed.</p>
-        <div class="panel privacy-details"><h2>Local by design</h2><p>Detection runs entirely on your device. CodeSwitch has no analytics, accounts or cloud inference. It never writes your typing to logs or sends it over the network.</p><h2>Updates</h2><p>Optional automatic checks contact GitHub Releases. Downloads happen only when you choose Update and restart, and every package is verified with the app's update signing key. GitHub receives ordinary request metadata such as your IP address and platform. Update requests never include typed text or app rules. Disable automatic checks in Preferences.</p><h2>Only what it needs</h2><p>A short, temporary word buffer, the immediately reversible correction and a count of corrections since launch live in memory. The only typed text CodeSwitch stores is your list of words to leave alone, kept in your local settings file and editable on the Words page. CodeSwitch verifies the focused field before making a change. Protected and unsupported fields are skipped.</p><h2>Honest about boundaries</h2><p>Only standard US English and Russian layouts are supported. Custom editors, input methods, remote desktops, and elevated Windows apps may not support correction. Automatic correction remains gated until the release benchmark and platform validation pass.</p><h2>Free & open source</h2><p>CodeSwitch application code is MIT licensed. Word frequencies are from <strong>wordfreq by Robyn Speer</strong>, with data under CC BY-SA 4.0. SUBTLEX authors: <strong>Marc Brysbaert et al.</strong>; SUBTLEX is freely available data. Complete licenses and source attributions ship with the app under <code>licenses/</code>.</p><div class="about-version"><span id="about-version">CodeSwitch 0.1.0</span><span>English ↔ Russian</span></div></div>
+        <div class="eyebrow" data-i18n="about.eyebrow"></div><h1 data-i18n="about.title"></h1><p class="intro" data-i18n="about.intro"></p>
+        <div class="panel privacy-details"><h2 data-i18n="about.localTitle"></h2><p data-i18n="about.local"></p><h2 data-i18n="about.updatesTitle"></h2><p data-i18n="about.updates"></p><h2 data-i18n="about.needsTitle"></h2><p data-i18n="about.needs"></p><h2 data-i18n="about.boundsTitle"></h2><p data-i18n="about.bounds"></p><h2 data-i18n="about.openTitle"></h2><p data-i18n="about.open"></p><div class="about-version"><span id="about-version">CodeSwitch 0.1.0</span><span data-i18n="about.pair"></span></div></div>
       </section>
       <div id="toast" class="toast" role="status" hidden></div>
     </main>
   </div>`;
 
+let currentPage = "overview";
 function showPage(page: string) {
+  currentPage = page;
   document.querySelectorAll<HTMLElement>(".page").forEach((section) => { section.hidden = section.id !== `page-${page}`; });
   document.querySelectorAll<HTMLButtonElement>("[data-page]").forEach((button) => {
     const selected = button.dataset.page === page;
     button.classList.toggle("selected", selected);
     button.setAttribute("aria-current", selected ? "page" : "false");
   });
-  element("page-title").textContent = { overview: "Overview", preferences: "Preferences", exclusions: "App exclusions", words: "Words", about: "Privacy & about" }[page] ?? "Overview";
+  const titles: Record<string, Key> = { overview: "nav.overview", preferences: "nav.preferences", exclusions: "nav.exclusions", words: "nav.words", about: "nav.about" };
+  element("page-title").textContent = t(titles[page] ?? "nav.overview");
   document.querySelector("main")?.scrollTo(0, 0);
 }
 document.querySelectorAll<HTMLButtonElement>("[data-page]").forEach((button) => button.addEventListener("click", () => showPage(button.dataset.page ?? "overview")));
@@ -175,6 +188,7 @@ function toast(message: string) {
 }
 
 function render() {
+  renderInterface();
   const { settings } = status;
   const layouts = status.englishInstalled && status.russianInstalled;
   const available = status.publicReleaseApproved || (status.developmentBuild && settings.previewConsent);
@@ -182,34 +196,36 @@ function render() {
   const toggle = element<HTMLButtonElement>("enabled");
   toggle.setAttribute("aria-checked", String(settings.enabled));
   toggle.disabled = saving || status.state === "updating" || (!settings.enabled && !canEnable);
-  const labels: Record<string, string> = { paused: "Paused", active: "Ready to switch", updating: "Preparing app update", "needs-permission": "Needs keyboard access", "unsupported-field": "Waiting for a supported field", "excluded-app": "Paused in excluded app", "suspended-app": "Paused in this app" };
-  const current = settings.enabled ? (labels[status.state] ?? "Ready to switch") : "Paused";
+  const states = ["paused", "active", "updating", "needs-permission", "unsupported-field", "excluded-app", "suspended-app"];
+  const current = settings.enabled ? t(states.includes(status.state) ? `state.${status.state}` as Key : "state.active") : t("state.paused");
   element("status").innerHTML = "<i></i>";
   element("status").append(document.createTextNode(current));
   element("status").classList.toggle("active", settings.enabled && status.state === "active");
   const count = element("correction-count");
-  if (status.corrections > 0) count.textContent = `${status.corrections} ${status.corrections === 1 ? "word" : "words"} corrected since launch`;
-  else count.replaceChildren("English ", Object.assign(document.createElement("span"), { className: "pair-arrow", textContent: "↔" }), " Russian");
-  element("correction-description").textContent = status.state === "updating" ? "Finishing any correction before the app restarts." : settings.enabled ? "Watching for a clear match after each word." : canEnable ? "Ready when you are. Turn it on to start." : "Paused. Your keyboard is all yours.";
+  if (status.corrections > 0) count.textContent = t("count.corrected", { n: status.corrections, words: plural(status.corrections, "word") });
+  else count.replaceChildren(`${t("pair.english")} `, Object.assign(document.createElement("span"), { className: "pair-arrow", textContent: "↔" }), ` ${t("pair.russian")}`);
+  element("correction-description").textContent = t(status.state === "updating" ? "control.updating" : settings.enabled ? "control.watching" : canEnable ? "control.ready" : "control.paused");
   element("browser-notice").hidden = native;
   element("setup").hidden = settings.onboardingComplete && status.permissionGranted && layouts && available;
   const ready = Number(status.permissionGranted) + Number(layouts);
-  element("setup-progress").textContent = `${ready} of 2 ready`;
+  element("setup-progress").textContent = t("setup.progress", { n: ready });
   for (const [id, complete, number] of [["permission-check", status.permissionGranted, "1"], ["layout-check", layouts, "2"]] as const) {
     element(id).innerHTML = complete ? icon("check") : number;
     element(id).classList.toggle("complete", complete);
   }
   const permission = element<HTMLButtonElement>("permission");
   permission.disabled = !native || status.permissionGranted;
-  permission.textContent = status.permissionGranted ? "Allowed" : status.platform === "windows" ? "Check access" : "Grant access";
-  element("permission-description").textContent = status.platform === "windows" ? "Runs as a standard user. Elevated apps are skipped." : "Enable CodeSwitch in System Settings → Privacy & Security → Accessibility.";
-  element("layout-description").textContent = `${status.platform === "macos" ? "U.S. / ABC" : "US English"} ${status.englishInstalled ? "✓" : "— missing"} · ${status.platform === "macos" ? "Russian — PC" : "Russian ЙЦУКЕН"} ${status.russianInstalled ? "✓" : "— missing"}`;
-  element("layout-instructions").textContent = status.platform === "windows" ? "Open Settings → Time & language → Language & region. Add English (United States) and Russian. In Language options, select the US and standard Russian keyboards. Other layout variants are not supported in v1." : "Open System Settings → Keyboard → Text Input → Edit. Add English → U.S. (ABC also works) and Russian → Russian — PC. The Apple Russian and phonetic variants have different key mappings and are not supported in v1.";
+  const windows = status.platform === "windows";
+  if (status.permissionGranted) permission.textContent = t("setup.allowed");
+  else permission.innerHTML = `${t(windows ? "setup.check" : "setup.grant")} ${icon("chevron")}`;
+  element("permission-description").textContent = t(!native ? "setup.permissionIntro" : windows ? "setup.permissionWindows" : "setup.permissionMac");
+  element("layout-description").textContent = !native ? t("setup.layoutsIntro") : `${t(windows ? "setup.layoutEnWin" : "setup.layoutEnMac")} ${status.englishInstalled ? "✓" : t("setup.missing")} · ${t(windows ? "setup.layoutRuWin" : "setup.layoutRuMac")} ${status.russianInstalled ? "✓" : t("setup.missing")}`;
+  element("layout-instructions").textContent = t(windows ? "setup.helpWindows" : "setup.helpMac");
   element("preview-consent-row").hidden = !status.developmentBuild || status.publicReleaseApproved;
   element<HTMLInputElement>("preview-consent").checked = settings.previewConsent;
-  element("release-note").textContent = status.publicReleaseApproved ? "You're ready. Enable correction whenever you like." : status.developmentBuild ? "Development preview · public validation is still in progress." : "Automatic correction is awaiting public release validation. The test box remains available.";
+  element("release-note").textContent = t(status.publicReleaseApproved ? "setup.releaseReady" : status.developmentBuild ? "setup.releasePreview" : "setup.releasePending");
   element<HTMLButtonElement>("finish-setup").disabled = !native || !layouts || !status.permissionGranted || saving;
-  element<HTMLButtonElement>("finish-setup").textContent = settings.onboardingComplete ? "Setup complete" : "Finish setup";
+  element<HTMLButtonElement>("finish-setup").textContent = t(settings.onboardingComplete ? "setup.complete" : "setup.finish");
   const launch = element<HTMLInputElement>("launch-at-login");
   if (document.activeElement !== launch && !launch.dataset.dirty) launch.checked = settings.launchAtLogin;
   const shortcut = element<HTMLInputElement>("undo-shortcut");
@@ -221,8 +237,8 @@ function render() {
   element<HTMLButtonElement>("add-word").disabled = !native || saving;
   element<HTMLButtonElement>("save-preferences").disabled = !native || saving;
   element<HTMLButtonElement>("add-app").disabled = !native || saving;
-  shortcutHint(element("undo-hint"), settings.undoShortcut, " to undo");
-  shortcutHint(element("convert-hint"), settings.convertShortcut, " to convert");
+  shortcutHint(element("undo-hint"), settings.undoShortcut, t("hint.undo"));
+  shortcutHint(element("convert-hint"), settings.convertShortcut, t("hint.convert"));
   renderApps();
   renderWords();
   renderSuspended();
@@ -243,7 +259,7 @@ function shortcutHint(hint: HTMLElement, shortcut: string, label: string) {
 }
 
 function renderSuspended() {
-  const signature = JSON.stringify([status.suspendedApps, saving]);
+  const signature = JSON.stringify([status.suspendedApps, saving, language()]);
   if (signature === suspendedSignature) return;
   suspendedSignature = signature;
   const container = element("suspended");
@@ -252,27 +268,27 @@ function renderSuspended() {
     const notice = document.createElement("div"); notice.className = "notice update-notice";
     const text = document.createElement("span");
     const name = document.createElement("code"); name.textContent = app;
-    text.append("Correction is paused in ", name, " because an edit couldn't be verified. Check your text there, then resume.");
-    const resume = document.createElement("button"); resume.className = "text-button"; resume.textContent = "Resume"; resume.disabled = !native || saving;
+    text.append(t("suspended.before"), name, t("suspended.after"));
+    const resume = document.createElement("button"); resume.className = "text-button"; resume.textContent = t("suspended.resume"); resume.disabled = !native || saving;
     resume.addEventListener("click", () => { void invoke("resume_app", { app }).then(() => { error(null); return refresh(); }).catch((cause) => error(String(cause))); });
     notice.append(text, resume); container.append(notice);
   }
 }
 
 function renderWords() {
-  const signature = JSON.stringify([status.settings.ignoredWords, saving]);
+  const signature = JSON.stringify([status.settings.ignoredWords, saving, language()]);
   if (signature === wordSignature) return;
   wordSignature = signature;
   const words = status.settings.ignoredWords;
-  element("word-count").textContent = `${words.length} ${words.length === 1 ? "word" : "words"}`;
+  element("word-count").textContent = `${words.length} ${plural(words.length, "word")}`;
   element("clear-words").hidden = !words.length;
   element<HTMLButtonElement>("clear-words").disabled = !native || saving;
   const list = element("word-list"); list.replaceChildren();
-  if (!words.length) { const note = document.createElement("p"); note.className = "muted empty-state"; note.textContent = "No words yet. Add one above, or undo a correction you didn't want."; list.append(note); }
+  if (!words.length) { const note = document.createElement("p"); note.className = "muted empty-state"; note.textContent = t("words.empty"); list.append(note); }
   for (const word of [...words].reverse()) {
     const row = document.createElement("div"); row.className = "app-row";
     const name = document.createElement("code"); name.textContent = word;
-    const remove = document.createElement("button"); remove.className = "text-button"; remove.textContent = "Remove"; remove.disabled = saving;
+    const remove = document.createElement("button"); remove.className = "text-button"; remove.textContent = t("apps.remove"); remove.disabled = saving;
     remove.addEventListener("click", () => { void update({ ignoredWords: status.settings.ignoredWords.filter((item) => item !== word) }); });
     row.append(name, remove); list.append(row);
   }
@@ -282,7 +298,7 @@ function renderUpdates() {
   const update = status.updates;
   const busy = ["checking", "downloading", "installing"].includes(update.phase);
   for (const id of ["app-version", "about-version"]) element(id).textContent = `CodeSwitch ${status.version}`;
-  element("update-current-version").textContent = `Installed: ${status.version}`;
+  element("update-current-version").textContent = t("updates.installed", { v: status.version });
   element<HTMLInputElement>("automatic-update-checks").checked = status.settings.automaticUpdateChecks;
   element<HTMLInputElement>("automatic-update-checks").disabled = !native || saving;
   element<HTMLButtonElement>("check-updates").disabled = !native || busy;
@@ -290,11 +306,11 @@ function renderUpdates() {
   install.hidden = !update.version;
   install.disabled = !native || busy;
   const labels: Record<string, string> = {
-    checking: "Checking GitHub Releases…", current: "You're using the latest published version.",
-    available: `CodeSwitch ${update.version} is available.`, downloading: "Downloading and verifying the update…",
-    installing: "Installing the update. CodeSwitch will restart…",
+    checking: t("updates.checking"), current: t("updates.current"),
+    available: t("updates.available", { v: update.version ?? "" }), downloading: t("updates.downloading"),
+    installing: t("updates.installing"),
   };
-  element("update-status").textContent = update.message ?? labels[update.phase] ?? "Check for a new version of CodeSwitch.";
+  element("update-status").textContent = update.message ?? labels[update.phase] ?? t("updates.idle");
   element("update-notes").textContent = update.notes;
   element("update-notes").hidden = !update.notes;
   const progress = element<HTMLProgressElement>("update-progress");
@@ -302,23 +318,23 @@ function renderUpdates() {
   if (update.total) progress.value = Math.min(100, update.downloaded / update.total * 100);
   else progress.removeAttribute("value");
   element("update-notice").hidden = !update.version;
-  element("update-notice-text").textContent = `CodeSwitch ${update.version} is available.`;
+  element("update-notice-text").textContent = t("updates.available", { v: update.version ?? "" });
 }
 
 function renderApps() {
-  const signature = JSON.stringify([status.settings.excludedApps, status.settings.allowedApps, status.defaultExclusions, saving]);
+  const signature = JSON.stringify([status.settings.excludedApps, status.settings.allowedApps, status.defaultExclusions, saving, language()]);
   if (signature === ruleSignature) return;
   ruleSignature = signature;
   const custom = element("custom-apps");
   custom.replaceChildren();
-  const rules = [...status.settings.excludedApps.map((app) => ({ app, rule: "Excluded" })), ...status.settings.allowedApps.map((app) => ({ app, rule: "Allowed" }))];
-  element("rule-count").textContent = `${rules.length} ${rules.length === 1 ? "rule" : "rules"}`;
-  if (!rules.length) { const note = document.createElement("p"); note.className = "muted empty-state"; note.textContent = "No custom rules yet. Default exclusions are already in place."; custom.append(note); }
+  const rules = [...status.settings.excludedApps.map((app) => ({ app, rule: t("apps.excluded") })), ...status.settings.allowedApps.map((app) => ({ app, rule: t("apps.allowed") }))];
+  element("rule-count").textContent = `${rules.length} ${plural(rules.length, "rule")}`;
+  if (!rules.length) { const note = document.createElement("p"); note.className = "muted empty-state"; note.textContent = t("apps.empty"); custom.append(note); }
   for (const entry of rules) {
     const row = document.createElement("div"); row.className = "app-row";
     const name = document.createElement("code"); name.textContent = entry.app;
     const badge = document.createElement("span"); badge.className = "app-badge"; badge.textContent = entry.rule;
-    const remove = document.createElement("button"); remove.className = "text-button"; remove.textContent = "Remove"; remove.disabled = saving;
+    const remove = document.createElement("button"); remove.className = "text-button"; remove.textContent = t("apps.remove"); remove.disabled = saving;
     remove.addEventListener("click", () => { void update({ excludedApps: status.settings.excludedApps.filter((app) => app !== entry.app), allowedApps: status.settings.allowedApps.filter((app) => app !== entry.app) }); });
     row.append(name, badge, remove); custom.append(row);
   }
@@ -328,7 +344,7 @@ function renderApps() {
     const name = document.createElement("code"); name.textContent = app;
     const allow = document.createElement("button"); allow.className = "text-button";
     const allowed = status.settings.allowedApps.some((item) => item.toLowerCase() === app.toLowerCase());
-    allow.textContent = allowed ? "Allowed" : "Allow app"; allow.disabled = allowed || saving;
+    allow.textContent = t(allowed ? "apps.allowed" : "apps.allow"); allow.disabled = allowed || saving;
     allow.addEventListener("click", () => { void update({ allowedApps: [...status.settings.allowedApps, app] }); });
     row.append(name, allow); defaults.append(row);
   }
@@ -356,7 +372,7 @@ element("permission").addEventListener("click", () => {
   void invoke("request_permission").then(() => refresh()).catch((cause) => error(String(cause)));
 });
 element("layout-help").addEventListener("click", () => { element("layout-instructions").hidden = !element("layout-instructions").hidden; });
-element("finish-setup").addEventListener("click", () => { void update({ onboardingComplete: true }).then((saved) => { if (saved) toast("Setup complete. You can now choose to enable correction."); }); });
+element("finish-setup").addEventListener("click", () => { void update({ onboardingComplete: true }).then((saved) => { if (saved) toast(t("setup.toast")); }); });
 element("preview-consent").addEventListener("change", () => {
   const checked = element<HTMLInputElement>("preview-consent").checked;
   void update({ previewConsent: checked, ...(!checked ? { enabled: false } : {}) });
@@ -365,13 +381,13 @@ element("undo-shortcut").addEventListener("input", () => { element("undo-shortcu
 element("convert-shortcut").addEventListener("input", () => { element("convert-shortcut").dataset.dirty = "true"; });
 element("launch-at-login").addEventListener("change", () => { element("launch-at-login").dataset.dirty = "true"; });
 element("save-preferences").addEventListener("click", () => {
-  void update({ launchAtLogin: element<HTMLInputElement>("launch-at-login").checked, undoShortcut: element<HTMLInputElement>("undo-shortcut").value.trim(), convertShortcut: element<HTMLInputElement>("convert-shortcut").value.trim() }).then((saved) => { if (saved) { for (const id of ["undo-shortcut", "convert-shortcut", "launch-at-login"]) delete element(id).dataset.dirty; toast("Preferences saved"); } });
+  void update({ launchAtLogin: element<HTMLInputElement>("launch-at-login").checked, undoShortcut: element<HTMLInputElement>("undo-shortcut").value.trim(), convertShortcut: element<HTMLInputElement>("convert-shortcut").value.trim() }).then((saved) => { if (saved) { for (const id of ["undo-shortcut", "convert-shortcut", "launch-at-login"]) delete element(id).dataset.dirty; toast(t("prefs.saved")); } });
 });
 element("view-update").addEventListener("click", () => showPage("preferences"));
 element("check-updates").addEventListener("click", () => {
   status.updates.phase = "checking"; status.updates.message = null; renderUpdates();
   void invoke<UpdateStatus>("check_for_updates").then((updates) => { status.updates = updates; renderUpdates(); })
-    .catch(() => { status.updates.phase = "error"; status.updates.message = "Could not check for updates. Try again."; renderUpdates(); });
+    .catch(() => { status.updates.phase = "error"; status.updates.message = t("updates.failed"); renderUpdates(); });
 });
 element("install-update").addEventListener("click", () => {
   status.updates.phase = "downloading"; status.updates.message = null; renderUpdates();
@@ -386,7 +402,7 @@ element("automatic-update-checks").addEventListener("change", () => {
 if (native) void listen("show-updates", () => showPage("preferences"));
 element("add-app").addEventListener("click", () => {
   const app = element<HTMLInputElement>("app-id").value.trim();
-  if (!app) { error("Enter an exact app identifier first."); return; }
+  if (!app) { error(t("apps.enterId")); return; }
   const rule = element<HTMLSelectElement>("app-rule").value;
   const excludedApps = status.settings.excludedApps.filter((item) => item.toLowerCase() !== app.toLowerCase());
   const allowedApps = status.settings.allowedApps.filter((item) => item.toLowerCase() !== app.toLowerCase());
@@ -397,18 +413,26 @@ element("add-app").addEventListener("click", () => {
 element("learn-from-undo").addEventListener("change", () => { void update({ learnFromUndo: element<HTMLInputElement>("learn-from-undo").checked }); });
 function addWord() {
   const word = element<HTMLInputElement>("word-entry").value.trim();
-  if (!word) { error("Enter a word first."); return; }
-  if (/\s/.test(word)) { error("Add one word at a time."); return; }
+  if (!word) { error(t("words.enter")); return; }
+  if (/\s/.test(word)) { error(t("words.one")); return; }
   const key = (value: string) => value.toLowerCase().replace(/^[.,!?:;'"()[\]{}«»“”]+|[.,!?:;'"()[\]{}«»“”]+$/g, "");
-  if (status.settings.ignoredWords.some((item) => key(item) === key(word))) { element<HTMLInputElement>("word-entry").value = ""; toast("Already on your list"); return; }
+  if (status.settings.ignoredWords.some((item) => key(item) === key(word))) { element<HTMLInputElement>("word-entry").value = ""; toast(t("words.already")); return; }
   void update({ ignoredWords: [...status.settings.ignoredWords, word] }).then((saved) => { if (saved) element<HTMLInputElement>("word-entry").value = ""; });
 }
 element("add-word").addEventListener("click", addWord);
 element("word-entry").addEventListener("keydown", (event) => { if (event.key === "Enter") addWord(); });
 element("clear-words").addEventListener("click", () => {
-  if (window.confirm("Remove all words from your list?")) void update({ ignoredWords: [] });
+  if (window.confirm(t("words.confirmClear"))) void update({ ignoredWords: [] });
 });
 
+let lastPreview: { word: string; result: Candidate | null } | null = null;
+function renderPreview() {
+  const output = element("test-result"); output.replaceChildren();
+  if (!native || !lastPreview) { output.textContent = t("demo.openApp"); return; }
+  const { word, result } = lastPreview;
+  if (result) { const corrected = document.createElement("strong"); corrected.textContent = result.replacement; output.append(t("demo.wouldSwitch"), corrected, ` · ${t(result.target === "russian" ? "demo.toRussian" : "demo.toEnglish")}`); }
+  else output.textContent = t(word ? "demo.unchanged" : "demo.typeWord");
+}
 async function preview() {
   if (!native) return;
   const request = ++previewRequest;
@@ -417,13 +441,85 @@ async function preview() {
   try {
     const result = await invoke<Candidate | null>("preview_word", { word, layout });
     if (request !== previewRequest) return;
-    const output = element("test-result"); output.replaceChildren();
-    if (result) { const corrected = document.createElement("strong"); corrected.textContent = result.replacement; output.append("Would switch to ", corrected, ` · ${result.target === "russian" ? "Russian" : "English"}`); }
-    else output.textContent = word ? "Left unchanged — no clear match in the other layout." : "Type a word to try the detector.";
+    lastPreview = { word, result };
+    renderPreview();
   } catch (cause) { if (request === previewRequest) error(String(cause)); }
 }
 for (const id of ["test-word", "test-layout"]) element(id).addEventListener("input", () => { clearTimeout(previewTimer); previewTimer = setTimeout(() => { void preview(); }, 180); });
 
+// Interface language and appearance. A per-device cache paints the first frame
+// correctly before settings arrive from the app.
+const darkMedia = window.matchMedia("(prefers-color-scheme: dark)");
+let appliedLanguage = "";
+let appliedTheme = "";
+let reportedInterface = "";
+let cachedSignature = "";
+function cachedInterface(): { language: LanguageSetting; theme: ThemeSetting } {
+  try {
+    const value = JSON.parse(localStorage.getItem("codeswitch.interface") ?? "{}") as Partial<Settings>;
+    return { language: (["system", "en", "ru"] as const).find((item) => item === value.language) ?? "system", theme: (["system", "light", "dark"] as const).find((item) => item === value.theme) ?? "system" };
+  } catch { return { language: "system", theme: "system" }; }
+}
+function applyInterface(languageSetting: LanguageSetting, theme: ThemeSetting) {
+  const resolved = resolveLanguage(languageSetting);
+  if (resolved !== appliedLanguage) {
+    appliedLanguage = resolved;
+    setLanguage(resolved);
+    translateDocument();
+    showPage(currentPage);
+    renderPreview();
+  }
+  const resolvedTheme = theme === "system" ? (darkMedia.matches ? "dark" : "light") : theme;
+  document.documentElement.dataset.theme = resolvedTheme;
+  document.documentElement.style.colorScheme = resolvedTheme;
+  if (theme !== appliedTheme) {
+    appliedTheme = theme;
+    // Match the native title bar; null follows the system again.
+    if (native) void getCurrentWindow().setTheme(theme === "system" ? null : theme).catch(() => undefined);
+  }
+  const cache = JSON.stringify({ language: languageSetting, theme });
+  if (cache !== cachedSignature) { cachedSignature = cache; try { localStorage.setItem("codeswitch.interface", cache); } catch { /* cache only */ } }
+}
+function renderInterface() {
+  const { language: languageSetting, theme } = status.settings;
+  applyInterface(languageSetting, theme);
+  for (const [id, value] of [["language-choice", languageSetting], ["theme-choice", theme]] as const) {
+    element(id).querySelectorAll<HTMLButtonElement>("button").forEach((button) => {
+      button.setAttribute("aria-checked", String(button.dataset.value === value));
+      button.disabled = !native || saving;
+    });
+  }
+}
+async function setInterface(changes: Partial<Pick<Settings, "language" | "theme">>) {
+  const next = { language: status.settings.language, theme: status.settings.theme, ...changes };
+  const previous = { language: status.settings.language, theme: status.settings.theme };
+  status.settings = { ...status.settings, ...next };
+  renderInterface();
+  if (!native) return;
+  try { await reportInterface(true); error(null); }
+  catch (cause) { status.settings = { ...status.settings, ...previous }; renderInterface(); error(String(cause)); }
+}
+/** Save the interface choice and tell the app which language the tray menu should use. */
+async function reportInterface(force = false) {
+  const { language: languageSetting, theme } = status.settings;
+  const signature = `${languageSetting}/${theme}/${resolveLanguage(languageSetting)}`;
+  if (!native || (!force && signature === reportedInterface)) return;
+  await invoke("set_interface", { language: languageSetting, theme, russian: resolveLanguage(languageSetting) === "ru" });
+  reportedInterface = signature;
+}
+element("language-choice").addEventListener("click", (event) => {
+  const value = (event.target as HTMLElement).closest<HTMLButtonElement>("button")?.dataset.value as LanguageSetting | undefined;
+  if (value && value !== status.settings.language) void setInterface({ language: value });
+});
+element("theme-choice").addEventListener("click", (event) => {
+  const value = (event.target as HTMLElement).closest<HTMLButtonElement>("button")?.dataset.value as ThemeSetting | undefined;
+  if (value && value !== status.settings.theme) void setInterface({ theme: value });
+});
+darkMedia.addEventListener("change", () => applyInterface(status.settings.language, status.settings.theme));
+window.addEventListener("languagechange", () => { appliedLanguage = ""; renderInterface(); void reportInterface().catch(() => undefined); });
+
+status.settings = { ...status.settings, ...cachedInterface() };
 render();
-void refresh().then(() => preview());
+renderPreview();
+void refresh().then(() => { void reportInterface().catch(() => undefined); return preview(); });
 setInterval(() => { if (!document.hidden) void refresh(); }, 1500);

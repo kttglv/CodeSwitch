@@ -35,6 +35,7 @@ pub struct Updates {
     data: Mutex<Data>,
     busy: AtomicBool,
     menu_item: Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>,
+    russian: AtomicBool,
 }
 
 struct Operation<'a>(&'a AtomicBool);
@@ -49,13 +50,21 @@ impl Updates {
         *self.menu_item.lock().unwrap() = Some(item);
     }
 
+    pub fn set_russian(&self, russian: bool) {
+        self.russian.store(russian, Ordering::Relaxed);
+        self.refresh_menu();
+    }
+
     fn refresh_menu(&self) {
         let version = self.status().version;
+        let russian = self.russian.load(Ordering::Relaxed);
         if let Some(item) = self.menu_item.lock().unwrap().as_ref() {
-            let title = version.map_or_else(
-                || "Check for updates…".into(),
-                |v| format!("Update available: {v}…"),
-            );
+            let title = match (version, russian) {
+                (None, false) => "Check for updates…".into(),
+                (None, true) => "Проверить обновления…".into(),
+                (Some(v), false) => format!("Update available: {v}…"),
+                (Some(v), true) => format!("Доступно обновление: {v}…"),
+            };
             item.set_text(title).ok();
         }
     }

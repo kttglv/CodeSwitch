@@ -37,6 +37,40 @@ pub struct Shared {
     pub corrections: AtomicU64,
     /// Generation of the tray layout hint, so only the newest one clears it.
     pub feedback: AtomicU64,
+    /// Whether the tray menu and tooltip use Russian (the resolved UI language).
+    pub russian_ui: AtomicBool,
+}
+
+/// Tray menu items whose titles follow the interface language.
+struct TrayMenu {
+    show: MenuItem<tauri::Wry>,
+    toggle: MenuItem<tauri::Wry>,
+    quit: MenuItem<tauri::Wry>,
+}
+
+fn localize_tray(app: &tauri::AppHandle, russian: bool) {
+    let shared = app.state::<Arc<Shared>>();
+    shared.russian_ui.store(russian, Ordering::Relaxed);
+    if let Some(menu) = app.try_state::<TrayMenu>() {
+        let (show, toggle, quit) = if russian {
+            (
+                "Открыть CodeSwitch",
+                "Включить / приостановить исправление",
+                "Завершить CodeSwitch",
+            )
+        } else {
+            (
+                "Open CodeSwitch",
+                "Enable / pause correction",
+                "Quit CodeSwitch",
+            )
+        };
+        menu.show.set_text(show).ok();
+        menu.toggle.set_text(toggle).ok();
+        menu.quit.set_text(quit).ok();
+    }
+    app.state::<updates::Updates>().set_russian(russian);
+    worker::tooltip(&shared, app);
 }
 
 #[derive(Clone, Serialize)]
@@ -147,6 +181,30 @@ fn set_update_checks(enabled: bool, state: State<'_, Arc<Shared>>) -> Result<(),
     Ok(())
 }
 
+/// Save the interface language and appearance without touching correction state.
+/// `russian` is the language the window resolved (including "system"), for the tray.
+#[tauri::command]
+fn set_interface(
+    language: String,
+    theme: String,
+    russian: bool,
+    app: tauri::AppHandle,
+    state: State<'_, Arc<Shared>>,
+) -> Result<(), String> {
+    {
+        let mut settings = state.settings.lock().unwrap();
+        if settings.language != language || settings.theme != theme {
+            let mut next = settings.clone();
+            next.language = language;
+            next.theme = theme;
+            next.save(&state.path)?;
+            *settings = next;
+        }
+    }
+    localize_tray(&app, russian);
+    Ok(())
+}
+
 #[tauri::command]
 fn request_permission() -> bool {
     codeswitch_platform::permission(true)
@@ -243,6 +301,7 @@ fn main() {
             check_for_updates,
             install_update,
             set_update_checks,
+            set_interface,
             resume_app
         ])
         .setup(|app| {
@@ -273,6 +332,7 @@ fn main() {
                 suspended_apps: Mutex::new(Vec::new()),
                 corrections: AtomicU64::new(0),
                 feedback: AtomicU64::new(0),
+                russian_ui: AtomicBool::new(false),
             });
             app.manage(shared.clone());
             let show = MenuItem::with_id(app, "show", "Open CodeSwitch", true, None::<&str>)?;
@@ -289,6 +349,8 @@ fn main() {
             app.state::<updates::Updates>()
                 .set_menu_item(check_updates.clone());
             let menu = Menu::with_items(app, &[&show, &toggle, &check_updates, &quit])?;
+            let russian = shared.settings.lock().unwrap().language == "ru";
+            app.manage(TrayMenu { show, toggle, quit });
             TrayIconBuilder::with_id("codeswitch")
                 .icon(tauri::image::Image::from_bytes(include_bytes!(
                     "../icons/tray.png"
@@ -319,6 +381,8 @@ fn main() {
                     _ => {}
                 })
                 .build(app)?;
+            // "system" resolves in the window, which reports back through set_interface.
+            localize_tray(app.handle(), russian);
             worker::spawn(shared, app.handle().clone());
             updates::start(app.handle().clone());
             if std::env::args().any(|arg| arg == "--background") {
