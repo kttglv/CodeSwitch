@@ -34,6 +34,26 @@ than pretending it is up to date. No access token is embedded in the app.
 The current local feature does not publish a release, upload private keys, change
 repository visibility or bypass the existing public-release validation gate.
 
+## Current status
+
+| Item | State |
+| --- | --- |
+| Updater code, config and tests | Merged to `main` |
+| Public key matches local private key | Verified by a test signature |
+| Repository readable by anonymous clients | Yes, the repository is public |
+| `release` environment (restricted to `main`) | Created |
+| `TAURI_SIGNING_PRIVATE_KEY` / `_PASSWORD` secrets | **Not set** |
+| Apple Developer ID / notarization secrets | **Not set** |
+| Windows publisher certificate secrets | **Not set** |
+| `release/readiness.json` gate | **Closed**: not approved, no platform validated |
+| Published release / feed | **None**: `latest.json` returns 404 |
+| Real upgrade validated (Apple Silicon, Intel, Windows 11) | **Not started** |
+
+The workflow runs `scripts/check_release.py` before building, so no release,
+including an updater-only one, can be produced until the readiness gate passes.
+Validating an upgrade needs two published updater-enabled releases: the current
+version (0.1.0) and a later, higher one.
+
 ## Signing key
 
 The public key is committed in `release/updater.pub` and `src-tauri/tauri.conf.json`.

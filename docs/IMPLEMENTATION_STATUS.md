@@ -94,12 +94,13 @@ punctuation defect; it is now development data with a retained historical baseli
   application matrix. CI builds do not establish real-app typing compatibility.
 - Independent review/evaluation of natural wrong-layout typing, platform approvals,
   Developer ID notarization and Windows publisher signing using maintainer credentials.
-- Attach reviewed, signed installers to a GitHub Release. The private repository
-  has a draft [implementation fix PR](https://github.com/kttglv/CodeSwitch/pull/1);
-  no public release has been published.
-- Configure updater signing secrets, make the feed publicly readable, publish the
-  first reviewed signed release, and validate real upgrades on all target systems.
-  See [updater setup](UPDATES.md). The updater cannot serve unpublished private assets.
+- Attach reviewed, signed installers to a GitHub Release. The repository is public
+  and the updater code is merged to `main`; no release has been published.
+- Configure the updater signing and platform signing secrets in the `release`
+  environment, publish the first reviewed signed release, then publish a higher
+  version and validate real upgrades on all target systems. See
+  [updater status](UPDATES.md#current-status). The feed returns 404 until a release
+  is published.
 
 `release/readiness.json` remains unapproved. Production builds cannot enable global
 automatic correction until the release gate passes. Debug builds offer an explicit
