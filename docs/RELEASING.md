@@ -49,8 +49,12 @@ explicit experimental opt-in and may behave differently from optimized builds.
 
 CI builds/tests macOS arm64, macOS x64 and Windows x64, checks resource hashes,
 exports dependency notices, and uploads unsigned preview artifacts. The separate
-manual release workflow requires the benchmark/manual release gate to pass before
-building signed artifacts. Source, corpus and metadata fingerprints must match.
+manual release workflow requires the distribution gate
+(`check_release.py --distribution`, resource hashes) before building signed
+artifacts. Each build also runs the full benchmark/manual release gate in `build.rs`;
+unless it passes, with matching source, corpus and metadata fingerprints, the
+compiled app keeps global automatic correction disabled. The workflow summary
+reports which case applies, so say so in `release/notes.md`.
 The signed release workflow collects all three platforms, creates `latest.json`
 and stages a **draft** GitHub Release. A maintainer reviews and publishes that
 draft; clients only see published releases. See [updater setup](UPDATES.md).

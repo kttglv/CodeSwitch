@@ -69,4 +69,24 @@ class ReleaseGateTests(unittest.TestCase):
         self.write("resources/wordfreq/sample", "changed")
         with self.assertRaisesRegex(ValueError, "checksum"): self.run_gate()
 
+    def test_distribution_gate_does_not_require_correction_approval(self):
+        self.readiness["approved"] = False
+        self.readiness["manual_validation"]["windows_11_x64"] = False
+        self.report["source_sha256"] = "old-source"
+        self.write("release/readiness.json", self.readiness)
+        self.write("benchmarks/report.json", self.report)
+        check_release.check_distribution()
+        with self.assertRaisesRegex(ValueError, "not been approved"): check_release.check()
+
+    def test_distribution_gate_rejects_modified_resources(self):
+        self.write("resources/wordfreq/sample", "changed")
+        with self.assertRaisesRegex(ValueError, "checksum"): check_release.check_distribution()
+
+    def test_main_selects_gate_from_arguments(self):
+        self.readiness["approved"] = False
+        self.write("release/readiness.json", self.readiness)
+        self.write("benchmarks/report.json", self.report)
+        self.assertEqual(check_release.main(["--quiet", "--distribution"]), 0)
+        self.assertEqual(check_release.main(["--quiet"]), 1)
+
 if __name__ == "__main__": unittest.main()

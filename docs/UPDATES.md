@@ -32,7 +32,7 @@ is unavailable to anonymous clients. The app reports an unavailable feed rather
 than pretending it is up to date. No access token is embedded in the app.
 
 The current local feature does not publish a release, upload private keys, change
-repository visibility or bypass the existing public-release validation gate.
+repository visibility or bypass the automatic-correction validation gate.
 
 ## Current status
 
@@ -45,12 +45,15 @@ repository visibility or bypass the existing public-release validation gate.
 | `TAURI_SIGNING_PRIVATE_KEY` / `_PASSWORD` secrets | **Not set** |
 | Apple Developer ID / notarization secrets | **Not set** |
 | Windows publisher certificate secrets | **Not set** |
-| `release/readiness.json` gate | **Closed**: not approved, no platform validated |
+| Distribution gate (`check_release.py --distribution`) | Passes |
+| Automatic-correction gate (`release/readiness.json`) | **Closed**: not approved, no platform validated |
 | Published release / feed | **None**: `latest.json` returns 404 |
 | Real upgrade validated (Apple Silicon, Intel, Windows 11) | **Not started** |
 
-The workflow runs `scripts/check_release.py` before building, so no release,
-including an updater-only one, can be produced until the readiness gate passes.
+The workflow only requires the distribution gate, so a signed release can ship
+before typing correction is approved. `build.rs` runs the full gate separately, so
+such a release has global automatic correction compiled off; a later approved
+release turns it on through a normal update.
 Validating an upgrade needs two published updater-enabled releases: the current
 version (0.1.0) and a later, higher one.
 
@@ -90,8 +93,9 @@ on rebuild and may require the Accessibility permission entry to be renewed.
 5. Review the draft, test a real upgrade from the preceding version on both Mac
    architectures and Windows 11, then publish. Keep versioned assets immutable.
 
-The release gate remains closed until the original typing accuracy and native
-compatibility requirements pass. Preview CI builds do not need the private signing
+The automatic-correction gate remains closed until the original typing accuracy and
+native compatibility requirements pass; releases built meanwhile ship with correction
+disabled. Preview CI builds do not need the private signing
 key and do not publish update feeds.
 
 ## Checks
