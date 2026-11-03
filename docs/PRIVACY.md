@@ -27,8 +27,9 @@ when processing finishes. Memory is not guaranteed to be securely zeroized.
 Password/secure controls are skipped. macOS Secure Event Input blocks interception.
 On Windows, the focused provider must explicitly expose a false password property
 and an editable text range; unavailable properties result in no correction.
-The app does not request administrator privileges, bypass secure input, or modify
-elevated applications.
+The correction service does not request administrator privileges, bypass secure
+input, or modify elevated applications. Updating a system-owned macOS installation
+may ask the operating system for installation authorization.
 
 Settings contain only your enable/pause preference, onboarding/preview choice,
 startup preference, update-check preference, undo shortcut, and application rules. They are stored in the
