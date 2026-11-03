@@ -79,7 +79,7 @@ jobs:
           if [ -f "$RUNNER_TEMP/codeswitch-signing.keychain-db" ]; then
             security delete-keychain "$RUNNER_TEMP/codeswitch-signing.keychain-db"
           fi
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: codeswitch-signed-${{ matrix.target }}
           path: artifacts/updater/*
@@ -128,7 +128,7 @@ jobs:
           foreach ($file in $files) { if ((Get-AuthenticodeSignature $file).Status -ne 'Valid') { throw "Invalid signature: $file" } }
       - run: python scripts/dependency_notices.py
       - run: python scripts/update_manifest.py stage --target x86_64-pc-windows-msvc
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: codeswitch-signed-windows-x64
           path: artifacts/updater/*
