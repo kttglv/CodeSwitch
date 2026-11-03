@@ -1,4 +1,4 @@
-# Implementation status — October 30, 2026
+# Implementation status — November 3, 2026
 
 CodeSwitch 0.1.0 is a **development preview**, not a validated public release.
 
@@ -12,7 +12,8 @@ CodeSwitch 0.1.0 is a **development preview**, not a validated public release.
   and an isolated word test box. No accounts, cloud inference or typing logs.
 - macOS arm64 and Intel app/DMG builds pass in GitHub Actions. An updated arm64
   preview is also built locally.
-- 12 Rust tests and 6 Python release-gate tests pass; Clippy and TypeScript/Vite
+- 12 Rust tests and 7 Python checks pass, including a native macOS regression;
+  Clippy and TypeScript/Vite
   production build pass. Bundled original wordfreq resource checksums pass.
 - Desktop UI tested on this Mac: both conversion directions in the word test box,
   uppercase preservation, layout recognition, invalid-shortcut rejection, valid
@@ -28,6 +29,10 @@ CodeSwitch 0.1.0 is a **development preview**, not a validated public release.
 - Undo shortcuts pass through when no immediately reversible correction exists.
   Shared native tests cover shortcut repeats, modifier release, configuration
   changes and pause. Replayed typing goes through normal buffer invalidation.
+- Fixed the user-reported macOS 27.2 crash in `currentLayout()`: HIToolbox input
+  source queries, enumeration and selection now execute on the main queue.
+  The regression exercises main-thread and repeated worker-thread calls against
+  real HIToolbox APIs without starting hooks, reading fields or switching layouts.
 
 ## Engineering evaluation
 
@@ -52,10 +57,10 @@ punctuation defect; it is now development data with a retained historical baseli
 
 ## Remaining before public release
 
-- Live system-wide macOS correction/undo, secure-field and concurrency validation.
-  Accessibility access was requested, but the app continued to report it unavailable.
-  The user chose to finish without further live keyboard testing. Global correction
-  remains paused.
+- Comprehensive live system-wide macOS correction/undo, secure-field and concurrency
+  validation. The user originally skipped further live tests, then supplied the
+  macOS 27.2 crash above after enabling the preview. The targeted regression passes;
+  the complete real-app validation matrix remains unverified.
 - Actual Intel Mac and Windows 11 runtime validation, including the documented
   application matrix. CI builds do not establish real-app typing compatibility.
 - Independent review/evaluation of natural wrong-layout typing, platform approvals,

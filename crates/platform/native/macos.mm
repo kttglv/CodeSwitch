@@ -1,6 +1,7 @@
 #import <Cocoa/Cocoa.h>
 #import <ApplicationServices/ApplicationServices.h>
 #import <Carbon/Carbon.h>
+#import <dispatch/dispatch.h>
 #include "bridge.h"
 #include <atomic>
 #include <chrono>
@@ -104,7 +105,20 @@ CGEventRef tapCallback(CGEventTapProxy, CGEventType type, CGEventRef event, void
     return event;
 }
 
+// HIToolbox's input-source APIs assert the main queue on newer macOS versions.
+// Only these short calls move to the main thread; accessibility verification and
+// correction serialization stay on the worker, and event taps never wait here.
+template <typename Task>
+auto onMainThread(Task task) -> decltype(task()) {
+    if ([NSThread isMainThread]) return task();
+    using Result = decltype(task());
+    __block Result result{};
+    dispatch_sync(dispatch_get_main_queue(), ^{ result = task(); });
+    return result;
+}
+
 uint32_t sourceLayout(TISInputSourceRef source) {
+    dispatch_assert_queue(dispatch_get_main_queue());
     if (!source) return 0;
     auto id = (CFStringRef)TISGetInputSourceProperty(source, kTISPropertyInputSourceID);
     if (!id) return 0;
@@ -116,26 +130,30 @@ uint32_t sourceLayout(TISInputSourceRef source) {
 }
 
 uint32_t currentLayout() {
-    auto source = TISCopyCurrentKeyboardInputSource();
-    auto result = sourceLayout(source);
-    if (source) CFRelease(source);
-    return result;
+    return onMainThread([] {
+        auto source = TISCopyCurrentKeyboardInputSource();
+        auto result = sourceLayout(source);
+        if (source) CFRelease(source);
+        return result;
+    });
 }
 
 bool selectLayout(uint32_t layout) {
-    auto sources = TISCreateInputSourceList(nullptr, false);
-    if (!sources) return false;
-    bool selected = false;
-    for (CFIndex i = 0; i < CFArrayGetCount(sources); ++i) {
-        auto source = (TISInputSourceRef)CFArrayGetValueAtIndex(sources, i);
-        auto enabled = (CFBooleanRef)TISGetInputSourceProperty(source, kTISPropertyInputSourceIsEnabled);
-        if (sourceLayout(source) == layout && enabled && CFBooleanGetValue(enabled)) {
-            selected = TISSelectInputSource(source) == noErr;
-            break;
+    return onMainThread([layout] {
+        auto sources = TISCreateInputSourceList(nullptr, false);
+        if (!sources) return false;
+        bool selected = false;
+        for (CFIndex i = 0; i < CFArrayGetCount(sources); ++i) {
+            auto source = (TISInputSourceRef)CFArrayGetValueAtIndex(sources, i);
+            auto enabled = (CFBooleanRef)TISGetInputSourceProperty(source, kTISPropertyInputSourceIsEnabled);
+            if (sourceLayout(source) == layout && enabled && CFBooleanGetValue(enabled)) {
+                selected = TISSelectInputSource(source) == noErr;
+                break;
+            }
         }
-    }
-    CFRelease(sources);
-    return selected && currentLayout() == layout;
+        CFRelease(sources);
+        return selected && currentLayout() == layout;
+    });
 }
 
 struct Guard {
@@ -283,18 +301,20 @@ uint32_t cs_permissions(int request) {
     return (trusted ? 1 : 0) | (active ? 2 : 0);
 }
 uint32_t cs_layouts() {
-    uint32_t flags = 0;
-    auto sources = TISCreateInputSourceList(nullptr, false);
-    if (!sources) return 0;
-    for (CFIndex i = 0; i < CFArrayGetCount(sources); ++i) {
-        auto source = (TISInputSourceRef)CFArrayGetValueAtIndex(sources, i);
-        auto enabled = (CFBooleanRef)TISGetInputSourceProperty(source, kTISPropertyInputSourceIsEnabled);
-        if (enabled && CFBooleanGetValue(enabled)) {
-            auto layout = sourceLayout(source);
-            flags |= layout == 1 ? 1 : layout == 2 ? 2 : 0;
+    return onMainThread([] {
+        uint32_t flags = 0;
+        auto sources = TISCreateInputSourceList(nullptr, false);
+        if (!sources) return flags;
+        for (CFIndex i = 0; i < CFArrayGetCount(sources); ++i) {
+            auto source = (TISInputSourceRef)CFArrayGetValueAtIndex(sources, i);
+            auto enabled = (CFBooleanRef)TISGetInputSourceProperty(source, kTISPropertyInputSourceIsEnabled);
+            if (enabled && CFBooleanGetValue(enabled)) {
+                auto layout = sourceLayout(source);
+                flags |= layout == 1 ? 1 : layout == 2 ? 2 : 0;
+            }
         }
-    }
-    CFRelease(sources); return flags;
+        CFRelease(sources); return flags;
+    });
 }
 uint64_t cs_revision() { return revision.load(); }
 int cs_snapshot(CsSnapshot* output) { @autoreleasepool { return snapshot(output) ? 1 : 0; } }
