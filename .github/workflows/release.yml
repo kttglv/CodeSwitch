@@ -12,7 +12,8 @@ jobs:
         with:
           python-version: '3.12'
       # Releases may ship before automatic correction is approved. build.rs runs
-      # the full gate itself and compiles correction off unless it passes.
+      # the full gate itself and compiles correction off unless it passes. Signed
+      # builds deliberately skip the Rust build cache so no stale result is reused.
       - run: python3 scripts/check_release.py --distribution
       - name: Report automatic correction status
         run: |
@@ -43,7 +44,6 @@ jobs:
         with:
           python-version: '3.12'
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - run: npm ci
       - name: Require signing credentials
         env:
@@ -98,7 +98,6 @@ jobs:
         with:
           python-version: '3.12'
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - run: npm ci
       - name: Import publisher certificate
         shell: pwsh
