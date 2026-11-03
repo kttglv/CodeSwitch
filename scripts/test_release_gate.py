@@ -14,11 +14,11 @@ class ReleaseGateTests(unittest.TestCase):
         self.addCleanup(patch.stopall)
         patch.object(check_release, "ROOT", self.root).start()
         patch.object(check_release, "source_digest", return_value="current-source").start()
-        self.readiness = {"approved": True, "policy": "conservative-v2", "benchmark_report": "benchmarks/report.json", "manual_validation": {"macos_apple_silicon": True, "macos_intel": True, "windows_11_x64": True}}
+        self.readiness = {"approved": True, "policy": "conservative-v3", "benchmark_report": "benchmarks/report.json", "manual_validation": {"macos_apple_silicon": True, "macos_intel": True, "windows_11_x64": True}}
         self.metadata = {"held_out": True, "independently_annotated": True, "provenance": "Test fixture only; never release evidence"}
         self.write("benchmarks/held-out.jsonl", "test-corpus")
         self.write("benchmarks/held-out.meta.json", self.metadata)
-        self.report = {"source_sha256": "current-source", "corpus": "benchmarks/held-out.jsonl", "corpus_sha256": self.hash("benchmarks/held-out.jsonl"), "metadata_sha256": self.hash("benchmarks/held-out.meta.json"), "policy": "conservative-v2", "true_positive": 300, "negative_cases": 6000, "precision": 0.999, "by_layout": {layout: {"true_positive": 150, "negative_cases": 3000, "precision": 0.999} for layout in ["english", "russian"]}}
+        self.report = {"source_sha256": "current-source", "corpus": "benchmarks/held-out.jsonl", "corpus_sha256": self.hash("benchmarks/held-out.jsonl"), "metadata_sha256": self.hash("benchmarks/held-out.meta.json"), "policy": "conservative-v3", "true_positive": 300, "negative_cases": 6000, "precision": 0.999, "by_layout": {layout: {"true_positive": 150, "negative_cases": 3000, "precision": 0.999} for layout in ["english", "russian"]}}
         self.write("resources/wordfreq/sample", "resource")
         self.write("resources/wordfreq/manifest.json", {"files": {"sample": {"sha256": self.hash("resources/wordfreq/sample")}}})
 

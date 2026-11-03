@@ -6,7 +6,7 @@
 // Never put document contents in diagnostics. Suffix is at most 192 UTF-16 units.
 struct CsEvent {
     uint64_t revision;
-    uint32_t kind; // 1 text, 2 backspace, 3 reset, 4 undo, 5 transaction complete
+    uint32_t kind; // 1 text, 2 backspace, 3 reset, 4 undo, 5 transaction complete, 6 convert
 };
 struct CsSnapshot {
     void* handle;
@@ -34,5 +34,12 @@ int cs_replace(const CsSnapshot* before, const uint16_t* expected, uint32_t expe
 // Release queued hardware input only after the Rust worker verifies the result.
 void cs_finish(int replay);
 void cs_shortcut(uint32_t modifiers, uint32_t key); // Ctrl=1 Alt=2 Shift=4 Meta=8
+void cs_convert_shortcut(uint32_t modifiers, uint32_t key); // key 0 disables
+void cs_undo_arm(int available);
+void cs_convert_arm(int available); // unarmed convert shortcuts pass through
+void cs_undo_clear();
+// 0: pass through, 1: consume release/repeat, 2: consume and request undo,
+// 3: consume and request conversion of the word before the caret.
+int cs_undo_input(uint32_t modifiers, uint32_t key, int down);
 void cs_capture(int enabled); // Paused hooks forward input without collecting events.
 }

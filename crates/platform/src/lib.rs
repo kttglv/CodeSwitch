@@ -44,7 +44,10 @@ unsafe extern "C" {
     ) -> i32;
     fn cs_finish(replay: i32);
     fn cs_shortcut(modifiers: u32, key: u32);
+    fn cs_convert_shortcut(modifiers: u32, key: u32);
     fn cs_capture(enabled: i32);
+    fn cs_undo_arm(available: i32);
+    fn cs_convert_arm(available: i32);
 }
 
 pub enum EventKind {
@@ -71,6 +74,7 @@ extern "C" fn callback(event: *const NativeEvent, _: *mut c_void) {
         2 => EventKind::Input(Input::Backspace),
         4 => EventKind::Input(Input::Undo),
         5 => EventKind::Complete,
+        6 => EventKind::Input(Input::Convert),
         _ => EventKind::Input(Input::Reset),
     };
     if let Some(sender) = SENDER.get() {
@@ -114,8 +118,32 @@ pub fn finish(replay: bool) {
 pub fn capture(enabled: bool) {
     unsafe { cs_capture(i32::from(enabled)) }
 }
+pub fn arm_undo(available: bool) {
+    unsafe { cs_undo_arm(i32::from(available)) }
+}
+/// Allow the convert shortcut only while the focused field is supported and allowed.
+pub fn arm_convert(available: bool) {
+    unsafe { cs_convert_arm(i32::from(available)) }
+}
 
 pub fn shortcut(value: &str) -> Result<(), String> {
+    let (mods, key) = parse_shortcut(value)?;
+    unsafe { cs_shortcut(mods, key) };
+    Ok(())
+}
+
+/// Configure the convert shortcut; an empty value disables it.
+pub fn convert_shortcut(value: &str) -> Result<(), String> {
+    let (mods, key) = if value.is_empty() {
+        (0, 0)
+    } else {
+        parse_shortcut(value)?
+    };
+    unsafe { cs_convert_shortcut(mods, key) };
+    Ok(())
+}
+
+pub fn parse_shortcut(value: &str) -> Result<(u32, u32), String> {
     let mut mods = 0;
     let mut key = 0;
     for part in value.split('+') {
@@ -132,10 +160,9 @@ pub fn shortcut(value: &str) -> Result<(), String> {
         }
     }
     if key == 0 || mods == 0 {
-        return Err("The undo shortcut needs a modifier and supported key".into());
+        return Err("A shortcut needs a modifier and a supported key".into());
     }
-    unsafe { cs_shortcut(mods, key) };
-    Ok(())
+    Ok((mods, key))
 }
 
 pub struct Focus {
@@ -210,10 +237,121 @@ impl Focus {
         match result {
             1 => Ok(true),
             0 => Ok(false),
-            _ => Err(
-                "The operating system could not complete text replacement. Correction is paused."
-                    .into(),
-            ),
+            _ => Err("The operating system could not complete a text replacement.".into()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    unsafe extern "C" {
+        fn cs_undo_input(modifiers: u32, key: u32, down: i32) -> i32;
+        fn cs_undo_clear();
+    }
+
+    // Both tests mutate the same process-wide native shortcut state.
+    static NATIVE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn native_convert_shortcut_is_consumed_only_when_configured() {
+        let _guard = NATIVE.lock().unwrap();
+        unsafe {
+            cs_undo_clear();
+            cs_shortcut(3, 8);
+            cs_convert_shortcut(0, 0);
+            assert_eq!(cs_undo_input(6, 120, 1), 0, "disabled by default");
+
+            cs_convert_shortcut(6, 120);
+            assert_eq!(
+                cs_undo_input(6, 120, 1),
+                0,
+                "unarmed (e.g. excluded app) passes through"
+            );
+            cs_convert_arm(1);
+            assert_eq!(cs_undo_input(2, 120, 1), 0, "wrong modifiers pass through");
+            assert_eq!(cs_undo_input(6, 120, 1), 3, "armed convert is consumed");
+            assert_eq!(cs_undo_input(6, 120, 1), 1, "held-key repeats are consumed");
+            assert_eq!(cs_undo_input(0, 120, 0), 1, "matching release is consumed");
+            assert_eq!(cs_undo_input(6, 120, 1), 3, "every new press converts");
+            assert_eq!(cs_undo_input(6, 120, 0), 1);
+
+            cs_undo_arm(1);
+            assert_eq!(
+                cs_undo_input(3, 8, 1),
+                2,
+                "undo still works alongside convert"
+            );
+            assert_eq!(cs_undo_input(3, 8, 0), 1);
+
+            cs_convert_arm(0);
+            assert_eq!(cs_undo_input(6, 120, 1), 0, "disarming passes through");
+            cs_convert_arm(1);
+            cs_undo_clear();
+            assert_eq!(cs_undo_input(6, 120, 1), 0, "pause disarms convert");
+            cs_convert_arm(1);
+            cs_convert_shortcut(0, 0);
+            assert_eq!(cs_undo_input(6, 120, 1), 0, "clearing disables convert");
+            cs_shortcut(if cfg!(target_os = "macos") { 10 } else { 3 }, 8);
+        }
+    }
+
+    #[test]
+    fn shortcut_text_parses_and_rejects_unsupported_keys() {
+        assert_eq!(parse_shortcut("Ctrl+Alt+Backspace"), Ok((3, 8)));
+        assert_eq!(parse_shortcut("Shift+Meta+F9"), Ok((12, 120)));
+        assert!(parse_shortcut("Backspace").is_err(), "needs a modifier");
+        assert!(parse_shortcut("Ctrl+Space").is_err());
+        assert!(parse_shortcut("Ctrl+F8+F9").is_err());
+    }
+
+    #[test]
+    fn native_undo_is_available_only_once_after_an_explicit_arm() {
+        // Exercise the same native state machine used by both OS hooks without
+        // installing a hook or generating input on the developer's computer.
+        let _guard = NATIVE.lock().unwrap();
+        unsafe {
+            cs_undo_clear();
+            cs_shortcut(3, 8);
+            assert_eq!(cs_undo_input(3, 8, 1), 0, "ordinary shortcuts pass through");
+            assert_eq!(cs_undo_input(0, 8, 0), 0);
+
+            cs_undo_arm(1);
+            assert_eq!(cs_undo_input(1, 8, 1), 0, "wrong modifiers pass through");
+            assert_eq!(cs_undo_input(3, 8, 1), 2, "one undo request");
+            assert_eq!(cs_undo_input(3, 8, 1), 1, "held-key repeats are consumed");
+            assert_eq!(
+                cs_undo_input(0, 8, 1),
+                1,
+                "releasing modifiers cannot turn a consumed key into deletion"
+            );
+            assert_eq!(cs_undo_input(0, 8, 0), 1, "matching release is consumed");
+            assert_eq!(cs_undo_input(3, 8, 1), 0, "record was already consumed");
+
+            cs_undo_arm(1);
+            cs_undo_arm(0);
+            assert_eq!(cs_undo_input(3, 8, 1), 0, "typing/reset invalidates undo");
+
+            cs_undo_arm(1);
+            assert_eq!(cs_undo_input(3, 8, 1), 2);
+            cs_shortcut(6, 119);
+            assert_eq!(
+                cs_undo_input(0, 8, 0),
+                1,
+                "a settings change preserves the old key-up pair"
+            );
+            assert_eq!(
+                cs_undo_input(6, 119, 1),
+                0,
+                "settings changes disarm the old record"
+            );
+            cs_undo_arm(1);
+            assert_eq!(cs_undo_input(6, 119, 1), 2);
+            cs_undo_clear();
+            assert_eq!(cs_undo_input(0, 119, 0), 0, "pause clears held-key state");
+            assert_eq!(cs_undo_input(6, 119, 1), 0);
+            cs_shortcut(if cfg!(target_os = "macos") { 10 } else { 3 }, 8);
         }
     }
 }

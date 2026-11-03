@@ -35,10 +35,20 @@ the detector without enabling system-wide changes.
 - Correction at spaces and unambiguous punctuation; Enter/Tab pass through.
 - Immediate undo: **Option–Command–Backspace** on macOS,
   **Ctrl–Alt–Backspace** on Windows; configurable in Preferences.
-- Pause, launch at login, and per-app rules. Terminals/editors are excluded by default.
+- Convert on request: **Control–Command–Backspace** on macOS,
+  **Ctrl–Shift–Backspace** on Windows converts the word before the caret, even one
+  automatic correction skipped. Press again to switch back; configurable or off.
+- Words to leave alone: undoing an automatic correction remembers that word
+  (optional), and you can manage the list on the Words page.
+- An edit that can't be verified pauses correction only in that app until you resume.
+- Pause, launch at login, and per-app rules. The tray shows how many words were
+  corrected since launch; on macOS the menu bar briefly shows the new layout. Terminals/editors are excluded by default.
 - Verified editable fields only. Secure/unsupported fields and elevated Windows
   apps are skipped; the clipboard is never used.
-- No accounts, telemetry, cloud inference, typing history or automatic updater.
+- Optional automatic update checks through GitHub Releases, with verified packages
+  and user-initiated installation/restart. No typing is included in update requests.
+- No accounts, telemetry, cloud inference or typing history. The only stored typed
+  text is your never-correct word list (see [privacy](docs/PRIVACY.md)).
 
 ## Project structure
 

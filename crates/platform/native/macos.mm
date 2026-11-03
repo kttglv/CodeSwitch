@@ -1,6 +1,7 @@
 #import <Cocoa/Cocoa.h>
 #import <ApplicationServices/ApplicationServices.h>
 #import <Carbon/Carbon.h>
+#import <dispatch/dispatch.h>
 #include "bridge.h"
 #include <atomic>
 #include <chrono>
@@ -12,12 +13,12 @@
 namespace {
 constexpr int64_t OWN = 0x43535749544348;
 constexpr int64_t END = OWN + 1;
+constexpr int64_t REPLAY = OWN + 2;
 CsCallback callback = nullptr;
 void* context = nullptr;
 std::atomic<bool> running{false}, active{false};
 std::atomic<bool> capture{false};
 std::atomic<uint64_t> revision{0};
-std::atomic<uint32_t> undoMods{10}, undoKey{8};
 std::mutex gateMutex;
 bool gated = false;
 std::chrono::steady_clock::time_point gateStarted;
@@ -27,11 +28,12 @@ CFMachPortRef eventTap = nullptr;
 std::thread hookThread;
 AXUIElementRef lastField = nullptr;
 uint64_t fieldIdentity = 0;
-bool undoHeld = false;
 
 void emit(uint32_t kind) {
     CsEvent message{};
     message.kind = kind;
+    if (kind != 5) cs_undo_arm(0);
+    if (kind == 3) cs_convert_arm(0);
     message.revision = kind == 5 ? revision.load() : ++revision;
     if (callback) callback(&message, context);
 }
@@ -63,7 +65,7 @@ CGEventRef tapCallback(CGEventTapProxy, CGEventType type, CGEventRef event, void
     auto tag = CGEventGetIntegerValueField(event, kCGEventSourceUserData);
     if (tag == OWN) return event;
     if (tag == END) { emit(5); return event; }
-    {
+    if (tag != REPLAY) {
         std::lock_guard<std::mutex> lock(gateMutex);
         if (gated) {
             if (queued.size() < 128 && std::chrono::steady_clock::now() - gateStarted < std::chrono::milliseconds(200)) {
@@ -85,15 +87,11 @@ CGEventRef tapCallback(CGEventTapProxy, CGEventType type, CGEventRef event, void
         return event;
     }
     auto code = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
-    if (type == kCGEventKeyUp) {
-        if (undoHeld && key(code) == undoKey.load()) { undoHeld = false; return nullptr; }
-        return event;
-    }
+    const auto undo = cs_undo_input(mods(CGEventGetFlags(event)), key(code), type == kCGEventKeyDown);
+    if (undo) { if (undo == 2) emit(4); else if (undo == 3) emit(6); return nullptr; }
+    if (type == kCGEventKeyUp) return event;
     if (type != kCGEventKeyDown) return event;
     auto modifiers = mods(CGEventGetFlags(event));
-    if (modifiers == undoMods && key(code) == undoKey) {
-        undoHeld = true; emit(4); return nullptr;
-    }
     if (modifiers & (1 | 2 | 8)) { emit(3); return event; }
     if (code == kVK_Delete) { emit(2); return event; }
     if (code == kVK_Return || code == kVK_Tab || code == kVK_Escape || code == kVK_ForwardDelete
@@ -108,7 +106,20 @@ CGEventRef tapCallback(CGEventTapProxy, CGEventType type, CGEventRef event, void
     return event;
 }
 
+// HIToolbox's input-source APIs assert the main queue on newer macOS versions.
+// Only these short calls move to the main thread; accessibility verification and
+// correction serialization stay on the worker, and event taps never wait here.
+template <typename Task>
+auto onMainThread(Task task) -> decltype(task()) {
+    if ([NSThread isMainThread]) return task();
+    using Result = decltype(task());
+    __block Result result{};
+    dispatch_sync(dispatch_get_main_queue(), ^{ result = task(); });
+    return result;
+}
+
 uint32_t sourceLayout(TISInputSourceRef source) {
+    dispatch_assert_queue(dispatch_get_main_queue());
     if (!source) return 0;
     auto id = (CFStringRef)TISGetInputSourceProperty(source, kTISPropertyInputSourceID);
     if (!id) return 0;
@@ -120,26 +131,30 @@ uint32_t sourceLayout(TISInputSourceRef source) {
 }
 
 uint32_t currentLayout() {
-    auto source = TISCopyCurrentKeyboardInputSource();
-    auto result = sourceLayout(source);
-    if (source) CFRelease(source);
-    return result;
+    return onMainThread([] {
+        auto source = TISCopyCurrentKeyboardInputSource();
+        auto result = sourceLayout(source);
+        if (source) CFRelease(source);
+        return result;
+    });
 }
 
 bool selectLayout(uint32_t layout) {
-    auto sources = TISCreateInputSourceList(nullptr, false);
-    if (!sources) return false;
-    bool selected = false;
-    for (CFIndex i = 0; i < CFArrayGetCount(sources); ++i) {
-        auto source = (TISInputSourceRef)CFArrayGetValueAtIndex(sources, i);
-        auto enabled = (CFBooleanRef)TISGetInputSourceProperty(source, kTISPropertyInputSourceIsEnabled);
-        if (sourceLayout(source) == layout && enabled && CFBooleanGetValue(enabled)) {
-            selected = TISSelectInputSource(source) == noErr;
-            break;
+    return onMainThread([layout] {
+        auto sources = TISCreateInputSourceList(nullptr, false);
+        if (!sources) return false;
+        bool selected = false;
+        for (CFIndex i = 0; i < CFArrayGetCount(sources); ++i) {
+            auto source = (TISInputSourceRef)CFArrayGetValueAtIndex(sources, i);
+            auto enabled = (CFBooleanRef)TISGetInputSourceProperty(source, kTISPropertyInputSourceIsEnabled);
+            if (sourceLayout(source) == layout && enabled && CFBooleanGetValue(enabled)) {
+                selected = TISSelectInputSource(source) == noErr;
+                break;
+            }
         }
-    }
-    CFRelease(sources);
-    return selected && currentLayout() == layout;
+        CFRelease(sources);
+        return selected && currentLayout() == layout;
+    });
 }
 
 struct Guard {
@@ -287,24 +302,25 @@ uint32_t cs_permissions(int request) {
     return (trusted ? 1 : 0) | (active ? 2 : 0);
 }
 uint32_t cs_layouts() {
-    uint32_t flags = 0;
-    auto sources = TISCreateInputSourceList(nullptr, false);
-    if (!sources) return 0;
-    for (CFIndex i = 0; i < CFArrayGetCount(sources); ++i) {
-        auto source = (TISInputSourceRef)CFArrayGetValueAtIndex(sources, i);
-        auto enabled = (CFBooleanRef)TISGetInputSourceProperty(source, kTISPropertyInputSourceIsEnabled);
-        if (enabled && CFBooleanGetValue(enabled)) {
-            auto layout = sourceLayout(source);
-            flags |= layout == 1 ? 1 : layout == 2 ? 2 : 0;
+    return onMainThread([] {
+        uint32_t flags = 0;
+        auto sources = TISCreateInputSourceList(nullptr, false);
+        if (!sources) return flags;
+        for (CFIndex i = 0; i < CFArrayGetCount(sources); ++i) {
+            auto source = (TISInputSourceRef)CFArrayGetValueAtIndex(sources, i);
+            auto enabled = (CFBooleanRef)TISGetInputSourceProperty(source, kTISPropertyInputSourceIsEnabled);
+            if (enabled && CFBooleanGetValue(enabled)) {
+                auto layout = sourceLayout(source);
+                flags |= layout == 1 ? 1 : layout == 2 ? 2 : 0;
+            }
         }
-    }
-    CFRelease(sources); return flags;
+        CFRelease(sources); return flags;
+    });
 }
 uint64_t cs_revision() { return revision.load(); }
 int cs_snapshot(CsSnapshot* output) { @autoreleasepool { return snapshot(output) ? 1 : 0; } }
 void cs_release(void* handle) { delete (Guard*)handle; }
-void cs_shortcut(uint32_t modifiers, uint32_t shortcutKey) { undoMods = modifiers; undoKey = shortcutKey; }
-void cs_capture(int enabled) { capture = enabled != 0; }
+void cs_capture(int enabled) { capture = enabled != 0; if (!enabled) cs_undo_clear(); }
 
 int cs_replace(const CsSnapshot* before, const uint16_t* expected, uint32_t expectedLen,
                const uint16_t* replacement, uint32_t replacementLen, uint32_t layout) {
@@ -333,9 +349,12 @@ int cs_replace(const CsSnapshot* before, const uint16_t* expected, uint32_t expe
 
 void cs_finish(int replay) {
     std::lock_guard<std::mutex> lock(gateMutex);
+    if (!replay) cs_undo_arm(0);
     for (auto event : queued) {
         if (replay) {
-            CGEventSetIntegerValueField(event, kCGEventSourceUserData, OWN);
+            // Replayed hardware goes through normal shortcut/reset handling;
+            // synthetic corrections remain tagged OWN and are ignored.
+            CGEventSetIntegerValueField(event, kCGEventSourceUserData, REPLAY);
             CGEventPost(kCGHIDEventTap, event);
         }
         CFRelease(event);

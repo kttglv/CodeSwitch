@@ -20,11 +20,11 @@
   "false_negative": 0,
   "false_positive": 0,
   "negative_cases": 21,
-  "policy": "conservative-v2",
+  "policy": "conservative-v3",
   "precision": 1.0,
   "recall": 1.0,
   "true_positive": 9,
-  "source_sha256": "29b5218777266dc069c450359721c3e4f4a0e6bdaf745bb6c895749cb63469ff",
+  "source_sha256": "408caec4017249a99c6b6b0dd50d15537a4358aa94c4066c496ae1f7c8d411ca",
   "corpus": "benchmarks/smoke.jsonl",
   "corpus_sha256": "1b52b6e95a86bc96d3b41b50c4086403be946927eb4455b5519e1d64d15fded2",
   "metadata_sha256": "7496b70502a96c33fdf6ba19acc1572add572b10ce264a114dadf62113089864"

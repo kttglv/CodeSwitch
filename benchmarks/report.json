@@ -1,30 +1,30 @@
 {
   "by_layout": {
     "english": {
-      "false_negative": 1199,
+      "false_negative": 540,
       "false_positive": 0,
       "negative_cases": 3000,
       "precision": 1.0,
-      "recall": 0.20066666666666666,
-      "true_positive": 301
+      "recall": 0.64,
+      "true_positive": 960
     },
     "russian": {
-      "false_negative": 671,
+      "false_negative": 288,
       "false_positive": 0,
       "negative_cases": 3000,
       "precision": 1.0,
-      "recall": 0.5526666666666666,
-      "true_positive": 829
+      "recall": 0.808,
+      "true_positive": 1212
     }
   },
-  "false_negative": 1870,
+  "false_negative": 828,
   "false_positive": 0,
   "negative_cases": 6000,
-  "policy": "conservative-v2",
+  "policy": "conservative-v3",
   "precision": 1.0,
-  "recall": 0.37666666666666665,
-  "true_positive": 1130,
-  "source_sha256": "29b5218777266dc069c450359721c3e4f4a0e6bdaf745bb6c895749cb63469ff",
+  "recall": 0.724,
+  "true_positive": 2172,
+  "source_sha256": "408caec4017249a99c6b6b0dd50d15537a4358aa94c4066c496ae1f7c8d411ca",
   "corpus": "benchmarks/held-out.jsonl",
   "corpus_sha256": "f0ba88eb77f6bacc936da066500b9d0c4dedee3b12e765a5483921c1fdea2fc9",
   "metadata_sha256": "ce0eca0364fc65df0eae7294936eb4e402a282655f39097c72f006dfef726372"

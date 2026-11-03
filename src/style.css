@@ -13,3 +13,79 @@
 .button.small, .text-button, .control-footer { font-size: 11px; }
 .test-result { font-size: 12px; }
 .setup-bottom, .demo-footer, .privacy-line { font-size: 10px; }
+
+.updates-panel .section-heading{margin-bottom:20px}.updates-panel .preference-row{margin-bottom:16px;padding-bottom:16px}.update-status{font-size:12px;color:#526a58;line-height:1.7}.update-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:15px}.update-notes{white-space:pre-wrap;max-height:180px;overflow:auto;font-size:11px;color:#788775;line-height:1.7;margin-top:12px}.update-footnote{line-height:1.7;margin-top:13px}.updates-panel progress{width:100%;height:8px;accent-color:#497e59;margin-top:12px}.update-notice{display:flex;justify-content:space-between;gap:15px;align-items:center}.version>#app-version{font-size:9px;background:none;color:inherit;padding:0}
+.demo-footer>span[hidden]{display:none}.demo-footer>#convert-hint:not([hidden])+#undo-hint{margin-left:14px}.update-notice code{font-size:10px}
+
+/* Interface preferences: language and appearance. */
+.demo-footer>.demo-after{margin-left:0}
+.interface-panel .section-heading{margin-bottom:20px}.interface-panel .preference-row{margin-bottom:16px;padding-bottom:16px}.interface-panel .preference-row:last-child{border-bottom:0;margin-bottom:0;padding-bottom:0}
+.segmented{display:inline-flex;flex:none;gap:2px;padding:3px;border:1px solid #e1e8e0;border-radius:8px;background:#eef2ee}
+.segmented button{border:0;background:transparent;padding:6px 11px;border-radius:6px;font-size:11px;font-weight:500;color:#5f6f63;white-space:nowrap}
+.segmented button:hover:not(:disabled):not([aria-checked=true]){color:#2e6041}
+.segmented button[aria-checked=true]{background:#fff;color:#2e6041;box-shadow:0 1px 2px #1d33261f}
+.segmented button:disabled{opacity:.6}
+@media(max-width:650px){.segmented button{padding:6px 8px}}
+
+/* Dark appearance. */
+:root[data-theme=dark]{color-scheme:dark;color:#dfe7e2;background:#111513;--line:#262d29;--muted:#93a197}
+[data-theme=dark] body{background:#111513}
+[data-theme=dark] .sidebar{background:#161b18}
+[data-theme=dark] .brand-mark{background:#24453a}
+[data-theme=dark] .nav-caption{color:#6f7a74}
+[data-theme=dark] .nav-item{color:#9aa59f}
+[data-theme=dark] .nav-item:hover{background:#1e2521}
+[data-theme=dark] .nav-item.selected{background:#203328;color:#9fd4ad}
+[data-theme=dark] .local-note{color:#8a978f}
+[data-theme=dark] .version{color:#78837d}
+[data-theme=dark] .version span{background:#222924;color:#92a08f}
+[data-theme=dark] .topbar{background:#141916}
+[data-theme=dark] .language-pair{border-color:#2c3530;background:#1a201c;color:#a8b7ab}
+[data-theme=dark] .pair-arrow{color:#6d7a71}
+[data-theme=dark] .eyebrow{color:#7f9384}
+[data-theme=dark] h1{color:#e8f0ea}
+[data-theme=dark] .muted,[data-theme=dark] .intro,[data-theme=dark] .control-copy p,[data-theme=dark] .setup-row p,[data-theme=dark] .test-result,[data-theme=dark] .demo-footer,[data-theme=dark] .privacy-line,[data-theme=dark] .control-footer,[data-theme=dark] .setup-bottom,[data-theme=dark] .status-pill,[data-theme=dark] .preference-row p{color:#98a69c}
+[data-theme=dark] .control-card,[data-theme=dark] .demo-card,[data-theme=dark] .panel{background:#181e1b;border-color:#29312c;box-shadow:none}
+[data-theme=dark] .setup-card{background:#171d1a;border-color:#29312c}
+[data-theme=dark] .control-symbol{background:#1f3027;color:#8cc79b}
+[data-theme=dark] .switch{background:#3a433d}
+[data-theme=dark] .switch span{background:#e8ede9}
+[data-theme=dark] .switch[aria-checked=true]{background:#4f9a68}
+[data-theme=dark] .control-footer,[data-theme=dark] .setup-row,[data-theme=dark] .try-area,[data-theme=dark] .demo-footer{border-color:#252c28}
+[data-theme=dark] .status-pill i{background:#5f6a63}
+[data-theme=dark] .status-pill.active{color:#7ccf95}
+[data-theme=dark] .status-pill.active i{background:#6cc488}
+[data-theme=dark] .step-number{border-color:#333c36;color:#9aa69c;background:#1d2420}
+[data-theme=dark] .step-number.complete{color:#8cc79b;background:#1f3027;border-color:#1f3027}
+[data-theme=dark] .button{border-color:#323b35;background:#1e2521;color:#dfe7e2}
+[data-theme=dark] .button:hover:not(:disabled){background:#252d28}
+[data-theme=dark] .button.primary{background:#3c7a52;border-color:#3c7a52;color:#fff}
+[data-theme=dark] .button.primary:hover:not(:disabled){background:#46895d}
+[data-theme=dark] .text-button{color:#8fc19c}
+[data-theme=dark] .preview-consent{color:#a4b0a7}
+[data-theme=dark] .preview-consent input,[data-theme=dark] .checkbox{accent-color:#5aa877}
+[data-theme=dark] .help{background:#1d2b23;color:#a8bfae}
+[data-theme=dark] .tiny-badge{color:#8a9a8d;border-color:#2f3832}
+[data-theme=dark] .wrong-word{color:#6f7a73;text-decoration-color:#4a544e}
+[data-theme=dark] .demo-arrow{color:#6f8574}
+[data-theme=dark] .right-word{color:#9fd8af}
+[data-theme=dark] .cursor{background:#7cb98c}
+[data-theme=dark] .try-area>label,[data-theme=dark] .app-form>label{color:#9aa79d}
+[data-theme=dark] input:not([type=checkbox]),[data-theme=dark] select{border-color:#313a34;background:#121714;color:#dbe5dd}
+[data-theme=dark] input::placeholder{color:#64706a}
+[data-theme=dark] .test-result strong{color:#8fd3a2}
+[data-theme=dark] kbd{border-color:#343d37;color:#aab6ad;background:#1d2420}
+[data-theme=dark] .info-card{background:#1b2620;border-color:#28352d;color:#a5b8aa}
+[data-theme=dark] .app-row code{color:#a9bcad}
+[data-theme=dark] .app-badge,[data-theme=dark] .about-version{color:#8a978f}
+[data-theme=dark] .privacy-details p{color:#a3b0a6}
+[data-theme=dark] .notice{color:#a8bba9;border-color:#2b3a30;background:#1a2620}
+[data-theme=dark] .error{color:#f0b1a4;background:#2c1a17;border-color:#4c2c26}
+[data-theme=dark] .toast{background:#2f5a3e;box-shadow:0 4px 20px #0006}
+[data-theme=dark] .update-status{color:#b3c3b7}
+[data-theme=dark] .update-notes{color:#a0ada3}
+[data-theme=dark] .updates-panel progress{accent-color:#5aa877}
+[data-theme=dark] .segmented{background:#121714;border-color:#29312c}
+[data-theme=dark] .segmented button{color:#9aa79d}
+[data-theme=dark] .segmented button:hover:not(:disabled):not([aria-checked=true]){color:#cfe3d4}
+[data-theme=dark] .segmented button[aria-checked=true]{background:#26302a;color:#a6dcb5;box-shadow:0 1px 2px #0005}

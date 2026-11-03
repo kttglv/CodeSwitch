@@ -2,7 +2,7 @@ fn main() {
     println!("cargo:rerun-if-changed=native");
     let target = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
     let mut build = cc::Build::new();
-    build.cpp(true).include("native");
+    build.cpp(true).include("native").file("native/undo.cpp");
     match target.as_str() {
         "macos" => {
             build
