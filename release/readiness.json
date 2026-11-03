@@ -1,6 +1,6 @@
 {
   "approved": false,
-  "policy": "conservative-v2",
+  "policy": "conservative-v3",
   "benchmark_report": "benchmarks/report.json",
   "manual_validation": {
     "macos_apple_silicon": false,

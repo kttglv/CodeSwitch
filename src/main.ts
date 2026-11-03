@@ -1,4 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import "./style.css";
 
 type Layout = "english" | "russian";
@@ -10,6 +11,10 @@ interface Settings {
   allowedApps: string[];
   previewConsent: boolean;
   onboardingComplete: boolean;
+  automaticUpdateChecks: boolean;
+  convertShortcut: string;
+  ignoredWords: string[];
+  learnFromUndo: boolean;
 }
 interface Status {
   settings: Settings;
@@ -23,18 +28,27 @@ interface Status {
   state: string;
   lastError: string | null;
   defaultExclusions: string[];
+  version: string;
+  updates: UpdateStatus;
+  suspendedApps: string[];
+  corrections: number;
 }
+interface UpdateStatus { phase: string; version: string | null; notes: string | null; downloaded: number; total: number | null; message: string | null }
 interface Candidate { original: string; replacement: string; target: Layout }
 
 const native = isTauri();
 let status: Status = {
-  settings: { enabled: false, launchAtLogin: false, undoShortcut: "Meta+Alt+Backspace", excludedApps: [], allowedApps: [], previewConsent: false, onboardingComplete: false },
+  settings: { enabled: false, launchAtLogin: false, undoShortcut: "Meta+Alt+Backspace", excludedApps: [], allowedApps: [], previewConsent: false, onboardingComplete: false, automaticUpdateChecks: true, convertShortcut: "Ctrl+Meta+Backspace", ignoredWords: [], learnFromUndo: true },
   platform: "macos", permissionGranted: false, hookActive: false, englishInstalled: false, russianInstalled: false,
   publicReleaseApproved: false, developmentBuild: false, state: "paused", lastError: null, defaultExclusions: [],
+  version: "0.1.0", updates: { phase: "", version: null, notes: null, downloaded: 0, total: null, message: null },
+  suspendedApps: [], corrections: 0,
 };
 let saving = false;
 let previewRequest = 0;
 let ruleSignature = "";
+let wordSignature = "";
+let suspendedSignature = "";
 let previewTimer: ReturnType<typeof setTimeout>;
 
 const icons: Record<string, string> = {
@@ -46,6 +60,7 @@ const icons: Record<string, string> = {
   chevron: '<path d="m9 5 7 7-7 7"/>',
   check: '<path d="m5 12 4 4L19 6"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v.1"/>',
+  words: '<path d="M4 6h16M4 12h10M4 18h7"/><path d="m15 15 5 5M20 15l-5 5"/>',
   keyboard: '<rect x="2" y="5" width="20" height="14" rx="3"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 15h10"/>',
 };
 function icon(name: string) { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] ?? icons.info}</svg>`; }
@@ -63,15 +78,18 @@ element("app").innerHTML = `
       <button data-page="overview" class="nav-item selected">${icon("overview")}Overview</button>
       <button data-page="preferences" class="nav-item">${icon("settings")}Preferences</button>
       <button data-page="exclusions" class="nav-item">${icon("apps")}App exclusions</button>
+      <button data-page="words" class="nav-item">${icon("words")}Words</button>
       <button data-page="about" class="nav-item">${icon("shield")}Privacy & about</button>
     </nav>
-    <div class="sidebar-bottom"><div class="local-note">${icon("shield")}On your device. Always.</div><span class="version">CodeSwitch 0.1.0 <span>Preview</span></span></div>
+    <div class="sidebar-bottom"><div class="local-note">${icon("shield")}On your device. Always.</div><span class="version"><span id="app-version">CodeSwitch 0.1.0</span> <span>Preview</span></span></div>
   </aside>
   <div class="workspace">
     <header class="topbar"><span id="page-title">Overview</span><div class="language-pair"><span class="language-dot"></span>EN<span class="pair-arrow">↔</span>RU</div></header>
     <main>
       <div id="browser-notice" class="notice" hidden>You're viewing the interface in a browser. Open the desktop app to check permissions and try correction.</div>
       <div id="error" class="error" role="alert" hidden></div>
+      <div id="suspended" role="status"></div>
+      <div id="update-notice" class="notice update-notice" role="status" hidden><span id="update-notice-text"></span><button id="view-update" class="text-button">View update</button></div>
       <section id="page-overview" class="page">
         <div class="eyebrow">A LITTLE LESS FRICTION</div>
         <h1>Your words.<br>The right language.</h1>
@@ -80,7 +98,7 @@ element("app").innerHTML = `
           <div class="control-symbol">${icon("arrow")}</div>
           <div class="control-copy"><h2>Automatic correction</h2><p id="correction-description">Paused. Your keyboard is all yours.</p></div>
           <button id="enabled" class="switch" role="switch" aria-checked="false" aria-label="Automatic correction"><span></span></button>
-          <div class="control-footer"><span id="status" class="status-pill"><i></i>Paused</span><span>English <span class="pair-arrow">↔</span> Russian</span></div>
+          <div class="control-footer"><span id="status" class="status-pill"><i></i>Paused</span><span id="correction-count">English <span class="pair-arrow">↔</span> Russian</span></div>
         </div>
         <div id="setup" class="setup-card">
           <div class="section-heading"><h2>A quick setup</h2><span id="setup-progress" class="muted">0 of 2 ready</span></div>
@@ -95,14 +113,23 @@ element("app").innerHTML = `
           <p class="muted">Same keys. What you meant to say.</p>
           <div class="demo-conversion"><span class="wrong-word">ghbdtn</span><span class="demo-arrow">${icon("arrow")}</span><span class="right-word" lang="ru">привет<span class="cursor"></span></span></div>
           <div class="try-area"><label for="test-word">Try a word</label><div class="test-controls"><input id="test-word" value="ghbdtn" placeholder="A word in the wrong layout" maxlength="64" autocomplete="off" spellcheck="false" autocapitalize="off"><select id="test-layout" aria-label="Current keyboard layout"><option value="english">Typed in EN</option><option value="russian">Typed in RU</option></select></div><div id="test-result" class="test-result" aria-live="polite">Open the desktop app to try the detector.</div></div>
-          <div class="demo-footer">${icon("keyboard")}Correction happens after a word.<span id="undo-hint"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>⌫</kbd> to undo</span></div>
+          <div class="demo-footer">${icon("keyboard")}Correction happens after a word.<span id="convert-hint"></span><span id="undo-hint"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>⌫</kbd> to undo</span></div>
         </div>
         <div class="privacy-line">${icon("shield")}Your typing stays on your device. No cloud. No typing history.</div>
       </section>
       <section id="page-preferences" class="page" hidden>
         <div class="eyebrow">MAKE IT YOURS</div><h1>Quietly, in the<br>background.</h1><p class="intro">A few small preferences. Then, back to your words.</p>
-        <div class="panel"><div class="preference-row"><div><h2>Launch at login</h2><p>Keep CodeSwitch in your menu bar or system tray.</p></div><input id="launch-at-login" class="checkbox" type="checkbox" aria-label="Launch at login"></div><div class="preference-row"><div><h2>Undo shortcut</h2><p>Restore the last correction and its previous keyboard layout.<br>Available until you type again or move the caret.</p></div><input id="undo-shortcut" class="shortcut-input" aria-label="Undo shortcut" placeholder="Meta+Alt+Backspace"></div><div class="panel-footer"><span class="muted">Modifiers: Ctrl, Alt, Shift, Meta. Keys: Backspace, F8–F10.</span><button id="save-preferences" class="button primary">Save preferences</button></div></div>
-        <div class="info-card">${icon("info")}<p>Correction favors certainty. Short words, names, unfamiliar words, and matches that could belong to either language are left unchanged. Enter and Tab never trigger correction.</p></div>
+        <div class="panel"><div class="preference-row"><div><h2>Launch at login</h2><p>Keep CodeSwitch in your menu bar or system tray.</p></div><input id="launch-at-login" class="checkbox" type="checkbox" aria-label="Launch at login"></div><div class="preference-row"><div><h2>Undo shortcut</h2><p>Restore the last correction and its previous keyboard layout.<br>Available until you type again or move the caret.</p></div><input id="undo-shortcut" class="shortcut-input" aria-label="Undo shortcut" placeholder="Meta+Alt+Backspace"></div><div class="preference-row"><div><h2>Convert shortcut</h2><p>Convert the word before the caret to the other layout, even when<br>automatic correction left it unchanged. Press again to switch back.<br>Leave empty to turn it off.</p></div><input id="convert-shortcut" class="shortcut-input" aria-label="Convert shortcut" placeholder="Off"></div><div class="panel-footer"><span class="muted">Modifiers: Ctrl, Alt, Shift, Meta. Keys: Backspace, F8–F10.</span><button id="save-preferences" class="button primary">Save preferences</button></div></div>
+        <div class="info-card">${icon("info")}<p>Correction favors certainty. Short words, names, unfamiliar words, and matches that could belong to either language are left unchanged — use the convert shortcut for those. Enter and Tab never trigger correction.</p></div>
+        <div class="panel updates-panel">
+          <div class="section-heading"><h2>App updates</h2><span id="update-current-version" class="muted"></span></div>
+          <div class="preference-row"><div><h3>Check automatically</h3><p>Check GitHub Releases at startup and once a day.<br>Your typing is never included in update requests.</p></div><input id="automatic-update-checks" class="checkbox" type="checkbox" aria-label="Check for updates automatically"></div>
+          <p id="update-status" class="update-status" role="status" aria-live="polite">Check for a new version of CodeSwitch.</p>
+          <progress id="update-progress" max="100" hidden aria-label="Update download progress"></progress>
+          <p id="update-notes" class="update-notes" hidden></p>
+          <div class="update-actions"><button id="check-updates" class="button">Check for updates</button><button id="install-update" class="button primary" hidden>Update and restart</button></div>
+          <p class="muted update-footnote">Packages are verified before installation. CodeSwitch restarts only when you choose to install.</p>
+        </div>
       </section>
       <section id="page-exclusions" class="page" hidden>
         <div class="eyebrow">A PLACE FOR EVERYTHING</div><h1>Choose where<br>it works.</h1><p class="intro">Terminals and code editors are excluded by default.<br>Allow an app or add an exclusion using its exact identifier.</p>
@@ -110,9 +137,15 @@ element("app").innerHTML = `
         <div class="panel"><div class="section-heading"><h2>Your app rules</h2><span id="rule-count" class="muted">0 rules</span></div><div id="custom-apps" class="app-list"></div></div>
         <details class="panel default-apps"><summary>Default exclusions <span class="muted">Terminals & development tools</span></summary><div id="default-apps" class="app-list"></div></details>
       </section>
+      <section id="page-words" class="page" hidden>
+        <div class="eyebrow">YOUR VOCABULARY</div><h1>Words to<br>leave alone.</h1><p class="intro">Names, slang and jargon you never want switched.<br>Add a word as you type it, or as it would be converted — either works.</p>
+        <div class="panel"><div class="preference-row"><div><h2>Learn from undo</h2><p>When you undo an automatic correction, add that word here<br>so CodeSwitch leaves it alone next time.</p></div><input id="learn-from-undo" class="checkbox" type="checkbox" aria-label="Learn from undo"></div></div>
+        <div class="panel app-form"><label for="word-entry">Word</label><div class="app-controls"><input id="word-entry" placeholder="e.g. Vfrc or Макс" maxlength="64" autocomplete="off" spellcheck="false" autocapitalize="off"><button id="add-word" class="button primary">Add</button></div><p class="muted">Matching ignores capitalization and surrounding punctuation. Words are stored only in your local settings file.</p></div>
+        <div class="panel"><div class="section-heading"><h2>Your words</h2><span><span id="word-count" class="muted">0 words</span> <button id="clear-words" class="text-button" hidden>Clear all</button></span></div><div id="word-list" class="app-list"></div></div>
+      </section>
       <section id="page-about" class="page" hidden>
         <div class="eyebrow">BUILT ON TRUST</div><h1>Your words<br>stay yours.</h1><p class="intro">A small, open-source utility. No account needed.</p>
-        <div class="panel privacy-details"><h2>Local by design</h2><p>Detection runs entirely on your device. CodeSwitch has no analytics, accounts, cloud inference, or automatic updater. It never writes your typing to logs or sends it over the network.</p><h2>Only what it needs</h2><p>A short, temporary word buffer and the immediately reversible correction live in memory. CodeSwitch verifies the focused field before making a change. Protected and unsupported fields are skipped.</p><h2>Honest about boundaries</h2><p>Only standard US English and Russian layouts are supported. Custom editors, input methods, remote desktops, and elevated Windows apps may not support correction. Automatic correction remains gated until the release benchmark and platform validation pass.</p><h2>Free & open source</h2><p>CodeSwitch application code is MIT licensed. Word frequencies are from <strong>wordfreq by Robyn Speer</strong>, with data under CC BY-SA 4.0. SUBTLEX authors: <strong>Marc Brysbaert et al.</strong>; SUBTLEX is freely available data. Complete licenses and source attributions ship with the app under <code>licenses/</code>.</p><div class="about-version">CodeSwitch 0.1.0 <span>English ↔ Russian</span></div></div>
+        <div class="panel privacy-details"><h2>Local by design</h2><p>Detection runs entirely on your device. CodeSwitch has no analytics, accounts or cloud inference. It never writes your typing to logs or sends it over the network.</p><h2>Updates</h2><p>Optional automatic checks contact GitHub Releases. Downloads happen only when you choose Update and restart, and every package is verified with the app's update signing key. GitHub receives ordinary request metadata such as your IP address and platform. Update requests never include typed text or app rules. Disable automatic checks in Preferences.</p><h2>Only what it needs</h2><p>A short, temporary word buffer, the immediately reversible correction and a count of corrections since launch live in memory. The only typed text CodeSwitch stores is your list of words to leave alone, kept in your local settings file and editable on the Words page. CodeSwitch verifies the focused field before making a change. Protected and unsupported fields are skipped.</p><h2>Honest about boundaries</h2><p>Only standard US English and Russian layouts are supported. Custom editors, input methods, remote desktops, and elevated Windows apps may not support correction. Automatic correction remains gated until the release benchmark and platform validation pass.</p><h2>Free & open source</h2><p>CodeSwitch application code is MIT licensed. Word frequencies are from <strong>wordfreq by Robyn Speer</strong>, with data under CC BY-SA 4.0. SUBTLEX authors: <strong>Marc Brysbaert et al.</strong>; SUBTLEX is freely available data. Complete licenses and source attributions ship with the app under <code>licenses/</code>.</p><div class="about-version"><span id="about-version">CodeSwitch 0.1.0</span><span>English ↔ Russian</span></div></div>
       </section>
       <div id="toast" class="toast" role="status" hidden></div>
     </main>
@@ -125,7 +158,7 @@ function showPage(page: string) {
     button.classList.toggle("selected", selected);
     button.setAttribute("aria-current", selected ? "page" : "false");
   });
-  element("page-title").textContent = { overview: "Overview", preferences: "Preferences", exclusions: "App exclusions", about: "Privacy & about" }[page] ?? "Overview";
+  element("page-title").textContent = { overview: "Overview", preferences: "Preferences", exclusions: "App exclusions", words: "Words", about: "Privacy & about" }[page] ?? "Overview";
   document.querySelector("main")?.scrollTo(0, 0);
 }
 document.querySelectorAll<HTMLButtonElement>("[data-page]").forEach((button) => button.addEventListener("click", () => showPage(button.dataset.page ?? "overview")));
@@ -148,13 +181,16 @@ function render() {
   const canEnable = native && layouts && status.permissionGranted && status.hookActive && settings.onboardingComplete && available;
   const toggle = element<HTMLButtonElement>("enabled");
   toggle.setAttribute("aria-checked", String(settings.enabled));
-  toggle.disabled = saving || (!settings.enabled && !canEnable);
-  const labels: Record<string, string> = { paused: "Paused", active: "Ready to switch", "needs-permission": "Needs keyboard access", "unsupported-field": "Waiting for a supported field", "excluded-app": "Paused in excluded app" };
+  toggle.disabled = saving || status.state === "updating" || (!settings.enabled && !canEnable);
+  const labels: Record<string, string> = { paused: "Paused", active: "Ready to switch", updating: "Preparing app update", "needs-permission": "Needs keyboard access", "unsupported-field": "Waiting for a supported field", "excluded-app": "Paused in excluded app", "suspended-app": "Paused in this app" };
   const current = settings.enabled ? (labels[status.state] ?? "Ready to switch") : "Paused";
   element("status").innerHTML = "<i></i>";
   element("status").append(document.createTextNode(current));
-  element("status").classList.toggle("active", settings.enabled);
-  element("correction-description").textContent = settings.enabled ? "Watching for a clear match after each word." : canEnable ? "Ready when you are. Turn it on to start." : "Paused. Your keyboard is all yours.";
+  element("status").classList.toggle("active", settings.enabled && status.state === "active");
+  const count = element("correction-count");
+  if (status.corrections > 0) count.textContent = `${status.corrections} ${status.corrections === 1 ? "word" : "words"} corrected since launch`;
+  else count.replaceChildren("English ", Object.assign(document.createElement("span"), { className: "pair-arrow", textContent: "↔" }), " Russian");
+  element("correction-description").textContent = status.state === "updating" ? "Finishing any correction before the app restarts." : settings.enabled ? "Watching for a clear match after each word." : canEnable ? "Ready when you are. Turn it on to start." : "Paused. Your keyboard is all yours.";
   element("browser-notice").hidden = native;
   element("setup").hidden = settings.onboardingComplete && status.permissionGranted && layouts && available;
   const ready = Number(status.permissionGranted) + Number(layouts);
@@ -178,18 +214,95 @@ function render() {
   if (document.activeElement !== launch && !launch.dataset.dirty) launch.checked = settings.launchAtLogin;
   const shortcut = element<HTMLInputElement>("undo-shortcut");
   if (document.activeElement !== shortcut && !shortcut.dataset.dirty) shortcut.value = settings.undoShortcut;
+  const convert = element<HTMLInputElement>("convert-shortcut");
+  if (document.activeElement !== convert && !convert.dataset.dirty) convert.value = settings.convertShortcut;
+  element<HTMLInputElement>("learn-from-undo").checked = settings.learnFromUndo;
+  element<HTMLInputElement>("learn-from-undo").disabled = !native || saving;
+  element<HTMLButtonElement>("add-word").disabled = !native || saving;
   element<HTMLButtonElement>("save-preferences").disabled = !native || saving;
   element<HTMLButtonElement>("add-app").disabled = !native || saving;
-  const hint = element("undo-hint");
+  shortcutHint(element("undo-hint"), settings.undoShortcut, " to undo");
+  shortcutHint(element("convert-hint"), settings.convertShortcut, " to convert");
+  renderApps();
+  renderWords();
+  renderSuspended();
+  renderUpdates();
+  if (status.lastError) error(status.lastError);
+}
+
+function shortcutHint(hint: HTMLElement, shortcut: string, label: string) {
   hint.replaceChildren();
-  for (const part of settings.undoShortcut.split("+")) {
+  hint.hidden = !shortcut;
+  if (!shortcut) return;
+  for (const part of shortcut.split("+")) {
     const key = document.createElement("kbd");
     key.textContent = status.platform === "macos" ? ({ Meta: "⌘", Alt: "⌥", Ctrl: "⌃", Shift: "⇧", Backspace: "⌫" }[part] ?? part) : part;
     hint.append(key);
   }
-  hint.append(document.createTextNode(" to undo"));
-  renderApps();
-  if (status.lastError) error(status.lastError);
+  hint.append(document.createTextNode(label));
+}
+
+function renderSuspended() {
+  const signature = JSON.stringify([status.suspendedApps, saving]);
+  if (signature === suspendedSignature) return;
+  suspendedSignature = signature;
+  const container = element("suspended");
+  container.replaceChildren();
+  for (const app of status.suspendedApps) {
+    const notice = document.createElement("div"); notice.className = "notice update-notice";
+    const text = document.createElement("span");
+    const name = document.createElement("code"); name.textContent = app;
+    text.append("Correction is paused in ", name, " because an edit couldn't be verified. Check your text there, then resume.");
+    const resume = document.createElement("button"); resume.className = "text-button"; resume.textContent = "Resume"; resume.disabled = !native || saving;
+    resume.addEventListener("click", () => { void invoke("resume_app", { app }).then(() => { error(null); return refresh(); }).catch((cause) => error(String(cause))); });
+    notice.append(text, resume); container.append(notice);
+  }
+}
+
+function renderWords() {
+  const signature = JSON.stringify([status.settings.ignoredWords, saving]);
+  if (signature === wordSignature) return;
+  wordSignature = signature;
+  const words = status.settings.ignoredWords;
+  element("word-count").textContent = `${words.length} ${words.length === 1 ? "word" : "words"}`;
+  element("clear-words").hidden = !words.length;
+  element<HTMLButtonElement>("clear-words").disabled = !native || saving;
+  const list = element("word-list"); list.replaceChildren();
+  if (!words.length) { const note = document.createElement("p"); note.className = "muted empty-state"; note.textContent = "No words yet. Add one above, or undo a correction you didn't want."; list.append(note); }
+  for (const word of [...words].reverse()) {
+    const row = document.createElement("div"); row.className = "app-row";
+    const name = document.createElement("code"); name.textContent = word;
+    const remove = document.createElement("button"); remove.className = "text-button"; remove.textContent = "Remove"; remove.disabled = saving;
+    remove.addEventListener("click", () => { void update({ ignoredWords: status.settings.ignoredWords.filter((item) => item !== word) }); });
+    row.append(name, remove); list.append(row);
+  }
+}
+
+function renderUpdates() {
+  const update = status.updates;
+  const busy = ["checking", "downloading", "installing"].includes(update.phase);
+  for (const id of ["app-version", "about-version"]) element(id).textContent = `CodeSwitch ${status.version}`;
+  element("update-current-version").textContent = `Installed: ${status.version}`;
+  element<HTMLInputElement>("automatic-update-checks").checked = status.settings.automaticUpdateChecks;
+  element<HTMLInputElement>("automatic-update-checks").disabled = !native || saving;
+  element<HTMLButtonElement>("check-updates").disabled = !native || busy;
+  const install = element<HTMLButtonElement>("install-update");
+  install.hidden = !update.version;
+  install.disabled = !native || busy;
+  const labels: Record<string, string> = {
+    checking: "Checking GitHub Releases…", current: "You're using the latest published version.",
+    available: `CodeSwitch ${update.version} is available.`, downloading: "Downloading and verifying the update…",
+    installing: "Installing the update. CodeSwitch will restart…",
+  };
+  element("update-status").textContent = update.message ?? labels[update.phase] ?? "Check for a new version of CodeSwitch.";
+  element("update-notes").textContent = update.notes;
+  element("update-notes").hidden = !update.notes;
+  const progress = element<HTMLProgressElement>("update-progress");
+  progress.hidden = update.phase !== "downloading";
+  if (update.total) progress.value = Math.min(100, update.downloaded / update.total * 100);
+  else progress.removeAttribute("value");
+  element("update-notice").hidden = !update.version;
+  element("update-notice-text").textContent = `CodeSwitch ${update.version} is available.`;
 }
 
 function renderApps() {
@@ -249,10 +362,28 @@ element("preview-consent").addEventListener("change", () => {
   void update({ previewConsent: checked, ...(!checked ? { enabled: false } : {}) });
 });
 element("undo-shortcut").addEventListener("input", () => { element("undo-shortcut").dataset.dirty = "true"; });
+element("convert-shortcut").addEventListener("input", () => { element("convert-shortcut").dataset.dirty = "true"; });
 element("launch-at-login").addEventListener("change", () => { element("launch-at-login").dataset.dirty = "true"; });
 element("save-preferences").addEventListener("click", () => {
-  void update({ launchAtLogin: element<HTMLInputElement>("launch-at-login").checked, undoShortcut: element<HTMLInputElement>("undo-shortcut").value.trim() }).then((saved) => { if (saved) { delete element("undo-shortcut").dataset.dirty; delete element("launch-at-login").dataset.dirty; toast("Preferences saved"); } });
+  void update({ launchAtLogin: element<HTMLInputElement>("launch-at-login").checked, undoShortcut: element<HTMLInputElement>("undo-shortcut").value.trim(), convertShortcut: element<HTMLInputElement>("convert-shortcut").value.trim() }).then((saved) => { if (saved) { for (const id of ["undo-shortcut", "convert-shortcut", "launch-at-login"]) delete element(id).dataset.dirty; toast("Preferences saved"); } });
 });
+element("view-update").addEventListener("click", () => showPage("preferences"));
+element("check-updates").addEventListener("click", () => {
+  status.updates.phase = "checking"; status.updates.message = null; renderUpdates();
+  void invoke<UpdateStatus>("check_for_updates").then((updates) => { status.updates = updates; renderUpdates(); })
+    .catch(() => { status.updates.phase = "error"; status.updates.message = "Could not check for updates. Try again."; renderUpdates(); });
+});
+element("install-update").addEventListener("click", () => {
+  status.updates.phase = "downloading"; status.updates.message = null; renderUpdates();
+  void invoke("install_update").catch(() => refresh());
+});
+element("automatic-update-checks").addEventListener("change", () => {
+  const enabled = element<HTMLInputElement>("automatic-update-checks").checked;
+  saving = true; render();
+  void invoke("set_update_checks", { enabled }).catch((cause) => error(String(cause)))
+    .finally(() => { saving = false; void refresh(); });
+});
+if (native) void listen("show-updates", () => showPage("preferences"));
 element("add-app").addEventListener("click", () => {
   const app = element<HTMLInputElement>("app-id").value.trim();
   if (!app) { error("Enter an exact app identifier first."); return; }
@@ -261,6 +392,21 @@ element("add-app").addEventListener("click", () => {
   const allowedApps = status.settings.allowedApps.filter((item) => item.toLowerCase() !== app.toLowerCase());
   (rule === "exclude" ? excludedApps : allowedApps).push(app);
   void update({ excludedApps, allowedApps }).then((saved) => { if (saved) element<HTMLInputElement>("app-id").value = ""; });
+});
+
+element("learn-from-undo").addEventListener("change", () => { void update({ learnFromUndo: element<HTMLInputElement>("learn-from-undo").checked }); });
+function addWord() {
+  const word = element<HTMLInputElement>("word-entry").value.trim();
+  if (!word) { error("Enter a word first."); return; }
+  if (/\s/.test(word)) { error("Add one word at a time."); return; }
+  const key = (value: string) => value.toLowerCase().replace(/^[.,!?:;'"()[\]{}«»“”]+|[.,!?:;'"()[\]{}«»“”]+$/g, "");
+  if (status.settings.ignoredWords.some((item) => key(item) === key(word))) { element<HTMLInputElement>("word-entry").value = ""; toast("Already on your list"); return; }
+  void update({ ignoredWords: [...status.settings.ignoredWords, word] }).then((saved) => { if (saved) element<HTMLInputElement>("word-entry").value = ""; });
+}
+element("add-word").addEventListener("click", addWord);
+element("word-entry").addEventListener("keydown", (event) => { if (event.key === "Enter") addWord(); });
+element("clear-words").addEventListener("click", () => {
+  if (window.confirm("Remove all words from your list?")) void update({ ignoredWords: [] });
 });
 
 async function preview() {

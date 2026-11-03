@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod settings;
+mod updates;
 mod worker;
 
 use codeswitch_engine::{Candidate, Detector, Layout};
@@ -9,7 +10,7 @@ use settings::Settings;
 use std::{
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
     },
 };
@@ -25,8 +26,17 @@ pub struct Shared {
     pub detector: Detector,
     path: PathBuf,
     pub stopping: AtomicBool,
+    pub updating: AtomicBool,
+    pub update_paused: AtomicBool,
+    pub worker_stopped: AtomicBool,
     pub status: Mutex<String>,
     pub last_error: Mutex<Option<String>>,
+    /// Apps paused after an unverified edit, until the user resumes them.
+    pub suspended_apps: Mutex<Vec<String>>,
+    /// Corrections kept since launch (in memory only, never persisted).
+    pub corrections: AtomicU64,
+    /// Generation of the tray layout hint, so only the newest one clears it.
+    pub feedback: AtomicU64,
 }
 
 #[derive(Clone, Serialize)]
@@ -43,6 +53,10 @@ struct Status {
     state: String,
     last_error: Option<String>,
     default_exclusions: Vec<&'static str>,
+    version: &'static str,
+    updates: updates::Status,
+    suspended_apps: Vec<String>,
+    corrections: u64,
 }
 
 fn release_approved() -> bool {
@@ -53,7 +67,7 @@ fn automatic_available(settings: &Settings) -> bool {
 }
 
 #[tauri::command]
-fn get_status(state: State<'_, Arc<Shared>>) -> Status {
+fn get_status(app: tauri::AppHandle, state: State<'_, Arc<Shared>>) -> Status {
     let (english, russian) = codeswitch_platform::layouts();
     Status {
         settings: state.settings.lock().unwrap().clone(),
@@ -64,10 +78,73 @@ fn get_status(state: State<'_, Arc<Shared>>) -> Status {
         russian_installed: russian,
         public_release_approved: release_approved(),
         development_build: cfg!(debug_assertions),
-        state: state.status.lock().unwrap().clone(),
+        state: if state.updating.load(Ordering::Acquire) {
+            "updating".into()
+        } else {
+            state.status.lock().unwrap().clone()
+        },
         last_error: state.last_error.lock().unwrap().clone(),
         default_exclusions: settings::DEFAULT_EXCLUSIONS.to_vec(),
+        version: env!("CARGO_PKG_VERSION"),
+        updates: app.state::<updates::Updates>().status(),
+        suspended_apps: state.suspended_apps.lock().unwrap().clone(),
+        corrections: state.corrections.load(Ordering::Relaxed),
     }
+}
+
+#[tauri::command]
+fn resume_app(app: String, state: State<'_, Arc<Shared>>) {
+    let mut apps = state.suspended_apps.lock().unwrap();
+    worker::resume(&mut apps, &app);
+    if apps.is_empty() {
+        *state.last_error.lock().unwrap() = None;
+    }
+}
+
+/// Register both shortcuts, or neither, so native state never mixes old and new.
+fn apply_shortcuts(settings: &Settings, previous: &Settings) -> Result<(), String> {
+    let undo = codeswitch_platform::parse_shortcut(&settings.undo_shortcut)
+        .map_err(|error| format!("Undo shortcut: {error}"))?;
+    if !settings.convert_shortcut.is_empty() {
+        let convert = codeswitch_platform::parse_shortcut(&settings.convert_shortcut)
+            .map_err(|error| format!("Convert shortcut: {error}"))?;
+        if convert == undo {
+            return Err("Use different shortcuts for undo and convert".into());
+        }
+    }
+    codeswitch_platform::shortcut(&settings.undo_shortcut)?;
+    if let Err(error) = codeswitch_platform::convert_shortcut(&settings.convert_shortcut) {
+        let _ = codeswitch_platform::shortcut(&previous.undo_shortcut);
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn restore_shortcuts(settings: &Settings) {
+    let _ = codeswitch_platform::shortcut(&settings.undo_shortcut);
+    let _ = codeswitch_platform::convert_shortcut(&settings.convert_shortcut);
+}
+
+#[tauri::command]
+async fn check_for_updates(app: tauri::AppHandle) -> updates::Status {
+    updates::check(&app, false).await
+}
+
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    updates::install(app).await
+}
+
+#[tauri::command]
+fn set_update_checks(enabled: bool, state: State<'_, Arc<Shared>>) -> Result<(), String> {
+    let mut settings = state.settings.lock().unwrap();
+    let previous = settings.automatic_update_checks;
+    settings.automatic_update_checks = enabled;
+    if let Err(error) = settings.save(&state.path) {
+        settings.automatic_update_checks = previous;
+        return Err(error);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -112,8 +189,8 @@ fn save_settings(
         );
     }
     let mut current = state.settings.lock().unwrap();
-    codeswitch_platform::shortcut(&settings.undo_shortcut)?;
     let old = current.clone();
+    apply_shortcuts(&settings, &old)?;
     let manager = app.autolaunch();
     if settings.launch_at_login != old.launch_at_login {
         if let Err(error) = if settings.launch_at_login {
@@ -121,7 +198,7 @@ fn save_settings(
         } else {
             manager.disable()
         } {
-            let _ = codeswitch_platform::shortcut(&old.undo_shortcut);
+            restore_shortcuts(&old);
             return Err(format!("Could not change launch at login: {error}"));
         }
     }
@@ -133,8 +210,12 @@ fn save_settings(
                 manager.disable()
             };
         }
-        let _ = codeswitch_platform::shortcut(&old.undo_shortcut);
+        restore_shortcuts(&old);
         return Err(error);
+    }
+    if settings.enabled && !old.enabled {
+        // Turning correction back on is the user's go-ahead after reviewing text.
+        state.suspended_apps.lock().unwrap().clear();
     }
     *current = settings;
     drop(current);
@@ -144,21 +225,25 @@ fn save_settings(
 }
 
 fn main() {
+    let autostart = tauri_plugin_autostart::Builder::new().args(["--background"]);
+    #[cfg(target_os = "macos")]
+    let autostart = autostart.macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent);
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             show_window(app)
         }))
-        .plugin(
-            tauri_plugin_autostart::Builder::new()
-                .macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent)
-                .args(["--background"])
-                .build(),
-        )
+        .plugin(autostart.build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updates::Updates::default())
         .invoke_handler(tauri::generate_handler![
             get_status,
             request_permission,
             preview_word,
-            save_settings
+            save_settings,
+            check_for_updates,
+            install_update,
+            set_update_checks,
+            resume_app
         ])
         .setup(|app| {
             let path = app.path().app_config_dir()?.join("settings.json");
@@ -169,17 +254,25 @@ fn main() {
             if !automatic_available(&settings) {
                 settings.enabled = false;
             }
-            if codeswitch_platform::shortcut(&settings.undo_shortcut).is_err() {
-                settings.undo_shortcut = Settings::default().undo_shortcut;
-                codeswitch_platform::shortcut(&settings.undo_shortcut).ok();
+            if apply_shortcuts(&settings, &Settings::default()).is_err() {
+                let defaults = Settings::default();
+                settings.undo_shortcut = defaults.undo_shortcut.clone();
+                settings.convert_shortcut = defaults.convert_shortcut.clone();
+                restore_shortcuts(&defaults);
             }
             let shared = Arc::new(Shared {
                 settings: Mutex::new(settings),
                 detector: Detector::bundled()?,
                 path,
                 stopping: AtomicBool::new(false),
+                updating: AtomicBool::new(false),
+                update_paused: AtomicBool::new(false),
+                worker_stopped: AtomicBool::new(true),
                 status: Mutex::new("paused".into()),
                 last_error: Mutex::new(error),
+                suspended_apps: Mutex::new(Vec::new()),
+                corrections: AtomicU64::new(0),
+                feedback: AtomicU64::new(0),
             });
             app.manage(shared.clone());
             let show = MenuItem::with_id(app, "show", "Open CodeSwitch", true, None::<&str>)?;
@@ -191,7 +284,11 @@ fn main() {
                 None::<&str>,
             )?;
             let quit = MenuItem::with_id(app, "quit", "Quit CodeSwitch", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &toggle, &quit])?;
+            let check_updates =
+                MenuItem::with_id(app, "updates", "Check for updates…", true, None::<&str>)?;
+            app.state::<updates::Updates>()
+                .set_menu_item(check_updates.clone());
+            let menu = Menu::with_items(app, &[&show, &toggle, &check_updates, &quit])?;
             TrayIconBuilder::with_id("codeswitch")
                 .icon(tauri::image::Image::from_bytes(include_bytes!(
                     "../icons/tray.png"
@@ -211,10 +308,19 @@ fn main() {
                         }
                     }
                     "quit" => app.exit(0),
+                    "updates" => {
+                        show_window(app);
+                        app.emit("show-updates", ()).ok();
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            updates::check(&app, false).await;
+                        });
+                    }
                     _ => {}
                 })
                 .build(app)?;
             worker::spawn(shared, app.handle().clone());
+            updates::start(app.handle().clone());
             if std::env::args().any(|arg| arg == "--background") {
                 if let Some(window) = app.get_webview_window("main") {
                     window.hide()?;

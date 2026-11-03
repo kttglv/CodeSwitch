@@ -21,7 +21,7 @@ def check():
     metadata = json.loads(corpus.with_suffix(".meta.json").read_text())
     require(report["metadata_sha256"] == hashlib.sha256(corpus.with_suffix(".meta.json").read_bytes()).hexdigest(), "Corpus metadata changed.")
     require(metadata["held_out"] is True and metadata["independently_annotated"] is True and metadata["provenance"].strip(), "Corpus must be held out and independently annotated.")
-    require(report["policy"] == readiness["policy"] == "conservative-v2", "Detector policy changed.")
+    require(report["policy"] == readiness["policy"] == "conservative-v3", "Detector policy changed.")
     require(report["true_positive"] >= 200 and report["negative_cases"] >= 5000, "Insufficient benchmark coverage.")
     require(report["precision"] >= 0.995, "Precision is below 99.5%.")
     for language in ["english", "russian"]:

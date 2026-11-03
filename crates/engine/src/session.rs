@@ -28,6 +28,18 @@ pub enum Input {
     Backspace,
     Reset,
     Undo,
+    /// Convert the word before the caret on request, without confidence checks.
+    Convert,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionKind {
+    /// Chosen by the detector after a completed word.
+    Automatic,
+    /// Requested with the convert shortcut.
+    Manual,
+    /// Restores the previous correction; `automatic` tells whether the detector made it.
+    Undo { automatic: bool },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,7 +47,7 @@ pub struct Action {
     pub expected: String,
     pub replacement: String,
     pub target: Layout,
-    pub undo: bool,
+    pub kind: ActionKind,
 }
 
 impl Action {
@@ -58,6 +70,7 @@ struct Undo {
     original: String,
     replacement: String,
     previous_layout: Layout,
+    automatic: bool,
 }
 
 #[derive(Default)]
@@ -100,8 +113,16 @@ impl Session {
                 expected: undo.replacement,
                 replacement: undo.original,
                 target: undo.previous_layout,
-                undo: true,
+                kind: ActionKind::Undo {
+                    automatic: undo.automatic,
+                },
             });
+        }
+        if matches!(input, Input::Convert) {
+            // Converted text comes from the verified snapshot, not the typing buffer,
+            // so the buffer is discarded whether or not the conversion is applied.
+            self.reset();
+            return convert(&snapshot.suffix, snapshot.layout);
         }
         self.undo = None;
         let change = match &input {
@@ -194,11 +215,13 @@ impl Session {
         self.word.clear();
         self.previous = Some(after.position());
         self.ignore_run = !action.replacement.ends_with(' ');
-        self.undo = (!action.undo).then(|| Undo {
+        let automatic = action.kind == ActionKind::Automatic;
+        self.undo = (!matches!(action.kind, ActionKind::Undo { .. })).then(|| Undo {
             snapshot: after.position(),
             original: action.expected.clone(),
             replacement: action.replacement.clone(),
             previous_layout: before.layout,
+            automatic,
         });
     }
 }
@@ -208,8 +231,56 @@ fn action(candidate: Candidate, delimiter: &str) -> Action {
         expected: format!("{}{delimiter}", candidate.original),
         replacement: format!("{}{delimiter}", candidate.replacement),
         target: candidate.target,
-        undo: false,
+        kind: ActionKind::Automatic,
     }
+}
+
+/// Physically remap the run before the caret (plus at most one trailing space).
+/// Direction follows the run's letters, so text typed in either layout converts.
+fn convert(suffix: &str, current: Layout) -> Option<Action> {
+    let (body, delimiter) = match suffix.strip_suffix(' ') {
+        Some(body) => (body, " "),
+        None => (suffix, ""),
+    };
+    let run = &body[body
+        .char_indices()
+        .rev()
+        .find(|(_, c)| c.is_whitespace())
+        .map_or(0, |(i, c)| i + c.len_utf8())..];
+    if run.is_empty() || run.chars().count() > MAX_WORD_CHARS {
+        return None;
+    }
+    let source = if run
+        .chars()
+        .any(|c| crate::layout::letter(c, Layout::Russian))
+    {
+        Layout::Russian
+    } else if run
+        .chars()
+        .any(|c| crate::layout::letter(c, Layout::English))
+    {
+        Layout::English
+    } else {
+        current
+    };
+    let target = source.other();
+    let mut mapped_letter = false;
+    let replacement: String = run
+        .chars()
+        .map(|c| match crate::remap(&c.to_string(), source) {
+            Some(mapped) => {
+                mapped_letter |= mapped.chars().any(|m| crate::layout::letter(m, target));
+                mapped
+            }
+            None => c.to_string(),
+        })
+        .collect();
+    mapped_letter.then(|| Action {
+        expected: format!("{run}{delimiter}"),
+        replacement: format!("{replacement}{delimiter}"),
+        target,
+        kind: ActionKind::Manual,
+    })
 }
 
 #[cfg(test)]
@@ -256,6 +327,202 @@ mod tests {
         let undo = session.accept(Input::Undo, &after, &detector).unwrap();
         assert_eq!(undo.replacement, "ghbdtn ");
         assert_eq!(undo.target, Layout::English);
+    }
+
+    fn snapshot(suffix: &str, layout: Layout, revision: u64) -> Snapshot {
+        Snapshot {
+            field: 1,
+            caret: suffix.encode_utf16().count() as i64,
+            suffix: suffix.into(),
+            layout,
+            revision,
+        }
+    }
+
+    #[test]
+    fn undo_reports_whether_it_reverts_an_automatic_correction() {
+        let detector = Detector::bundled().unwrap();
+        let mut session = Session::default();
+        let (before, action) = type_word(&mut session, &detector, "ghbdtn ");
+        let action = action.unwrap();
+        assert_eq!(action.kind, ActionKind::Automatic);
+        let after = Snapshot {
+            suffix: "привет ".into(),
+            layout: Layout::Russian,
+            ..before.clone()
+        };
+        session.committed(&before, &after, &action);
+        let undo = session.accept(Input::Undo, &after, &detector).unwrap();
+        assert_eq!(undo.kind, ActionKind::Undo { automatic: true });
+
+        let mut session = Session::default();
+        let before = snapshot("ghb", Layout::English, 4);
+        let manual = session.accept(Input::Convert, &before, &detector).unwrap();
+        let after = Snapshot {
+            suffix: "при".into(),
+            layout: Layout::Russian,
+            ..before.clone()
+        };
+        session.committed(&before, &after, &manual);
+        let undo = session.accept(Input::Undo, &after, &detector).unwrap();
+        assert_eq!(undo.kind, ActionKind::Undo { automatic: false });
+        assert_eq!(undo.replacement, "ghb");
+    }
+
+    #[test]
+    fn convert_rewrites_the_last_word_regardless_of_confidence() {
+        let detector = Detector::bundled().unwrap();
+        // (text before the caret, current layout, expected, replacement, target)
+        for (suffix, layout, expected, replacement, target) in [
+            // Too short for automatic correction, but the user asked for it.
+            ("ghb", Layout::English, "ghb", "при", Layout::Russian),
+            // One trailing space belongs to the word that was just completed.
+            (
+                "hello ghb ",
+                Layout::English,
+                "ghb ",
+                "при ",
+                Layout::Russian,
+            ),
+            ("ytn", Layout::English, "ytn", "нет", Layout::Russian),
+            ("Руддщ", Layout::Russian, "Руддщ", "Hello", Layout::English),
+            // Direction follows the characters, not the current layout.
+            ("руддщ", Layout::English, "руддщ", "hello", Layout::English),
+            // Punctuation keys convert physically; other characters stay.
+            (
+                "k.,jdm",
+                Layout::English,
+                "k.,jdm",
+                "любовь",
+                Layout::Russian,
+            ),
+            (
+                "ghbdtn!",
+                Layout::English,
+                "ghbdtn!",
+                "привет!",
+                Layout::Russian,
+            ),
+        ] {
+            let action = Session::default()
+                .accept(Input::Convert, &snapshot(suffix, layout, 9), &detector)
+                .unwrap_or_else(|| panic!("{suffix}"));
+            assert_eq!(action.expected, expected, "{suffix}");
+            assert_eq!(action.replacement, replacement, "{suffix}");
+            assert_eq!(action.target, target, "{suffix}");
+            assert_eq!(action.kind, ActionKind::Manual);
+        }
+    }
+
+    #[test]
+    fn convert_ignores_empty_or_letterless_runs() {
+        let detector = Detector::bundled().unwrap();
+        for suffix in ["", " ", "hello  ", "123", "?!", "line\n"] {
+            assert!(
+                Session::default()
+                    .accept(
+                        Input::Convert,
+                        &snapshot(suffix, Layout::English, 2),
+                        &detector
+                    )
+                    .is_none(),
+                "{suffix:?}"
+            );
+        }
+        let long = "f".repeat(crate::MAX_WORD_CHARS + 1);
+        assert!(Session::default()
+            .accept(
+                Input::Convert,
+                &snapshot(&long, Layout::English, 2),
+                &detector
+            )
+            .is_none());
+    }
+
+    #[test]
+    fn convert_replaces_a_pending_undo_and_cancels_the_word_buffer() {
+        let detector = Detector::bundled().unwrap();
+        let mut session = Session::default();
+        let (state, _) = type_word(&mut session, &detector, "ghbdt");
+        let convert = Snapshot {
+            revision: state.revision + 1,
+            ..state.clone()
+        };
+        let action = session.accept(Input::Convert, &convert, &detector).unwrap();
+        assert_eq!(action.replacement, "приве");
+        // Without a commit (e.g. verification failed), typing must not resume the old run.
+        let mut next = convert.clone();
+        next.suffix.push_str("n ");
+        next.caret += 2;
+        next.revision += 1;
+        assert!(session
+            .accept(
+                Input::Text("n".into()),
+                &Snapshot {
+                    suffix: "ghbdtn".into(),
+                    caret: next.caret - 1,
+                    ..next.clone()
+                },
+                &detector
+            )
+            .is_none());
+        next.revision += 1;
+        assert!(session
+            .accept(Input::Text(" ".into()), &next, &detector)
+            .is_none());
+    }
+
+    #[test]
+    fn caret_jump_mid_word_cancels_correction() {
+        let detector = Detector::bundled().unwrap();
+        let mut session = Session::default();
+        let (mut state, _) = type_word(&mut session, &detector, "ghbdtn");
+        state.caret -= 3; // e.g. a click that the hook did not see
+        state.revision += 1;
+        state.suffix = "ghb ".into();
+        assert!(session
+            .accept(Input::Text(" ".into()), &state, &detector)
+            .is_none());
+    }
+
+    #[test]
+    fn layout_change_mid_word_cancels_correction() {
+        let detector = Detector::bundled().unwrap();
+        let mut session = Session::default();
+        let (mut state, _) = type_word(&mut session, &detector, "ghbdtn");
+        state.layout = Layout::Russian;
+        state.suffix.push(' ');
+        state.caret += 1;
+        state.revision += 1;
+        assert!(session
+            .accept(Input::Text(" ".into()), &state, &detector)
+            .is_none());
+    }
+
+    #[test]
+    fn typing_after_a_correction_disables_its_undo() {
+        let detector = Detector::bundled().unwrap();
+        let mut session = Session::default();
+        let (before, action) = type_word(&mut session, &detector, "ghbdtn ");
+        let action = action.unwrap();
+        let mut after = Snapshot {
+            suffix: "привет ".into(),
+            layout: Layout::Russian,
+            ..before.clone()
+        };
+        session.committed(&before, &after, &action);
+        after.suffix.push('и');
+        after.caret += 1;
+        after.revision += 1;
+        session.accept(Input::Text("и".into()), &after, &detector);
+        assert!(session.accept(Input::Undo, &after, &detector).is_none());
+    }
+
+    #[test]
+    fn word_keys_ignore_case_and_surrounding_punctuation() {
+        assert_eq!(crate::word_key("(Ghbdtn)! "), "ghbdtn");
+        assert_eq!(crate::word_key("«Привет»"), "привет");
+        assert_eq!(crate::word_key("k.,jdm"), "k.,jdm");
     }
 
     #[test]
@@ -315,7 +582,7 @@ mod tests {
             expected: "ghbdtn ".into(),
             replacement: "привет ".into(),
             target: Layout::Russian,
-            undo: false,
+            kind: ActionKind::Automatic,
         };
         let after = Snapshot {
             suffix: "text привет ".into(),

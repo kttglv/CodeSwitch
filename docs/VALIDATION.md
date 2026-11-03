@@ -34,6 +34,19 @@ controls explicitly; never fall back to blind deletion or clipboard replacement.
 - Press the configured undo immediately: verify original text and previous layout.
   Repeat while modifiers remain held. Verify undo is unavailable after new typing,
   selection, mouse click, navigation, focus change or manual layout change.
+- Undo an automatic correction with **Learn from undo** on; retype the word and
+  verify it is left unchanged and listed on the Words page. Repeat with learning
+  off (no new entry) and after undoing a manual conversion (no new entry). Add a
+  word in its converted form (e.g. `привет`) and verify `ghbdtn ` stays unchanged.
+- Press the convert shortcut after a word (with and without its trailing space),
+  after a short word automatic correction skips (`ytn` → `нет`), and again to
+  switch back. Verify the layout follows, undo restores it, and the shortcut passes
+  through unchanged in excluded apps, unsupported/password fields, after a click or
+  focus change and while paused. Check that a new correction count appears in the
+  tray tooltip and (macOS) the menu bar briefly shows `RU`/`EN`.
+- Force an unverifiable edit (e.g. change the field programmatically during a
+  correction). Verify correction pauses only in that app with a Resume notice,
+  continues elsewhere, and pauses everywhere after failures in three apps.
 - Use Backspace mid-word; paste via keyboard/context menu; select then type; move
   the caret; switch apps or tabs mid-word. No stale text should be replaced.
 - Type quickly while a correction is pending. No interleaved, duplicated or dropped
@@ -47,6 +60,9 @@ controls explicitly; never fall back to blind deletion or clipboard replacement.
   exclusions taking precedence. A custom unsupported editor still stays unsupported.
 - Save/reload preferences, configure undo, enable/disable launch at login, close
   to tray, quit, relaunch, and reset settings. Check standard-user installation.
+- Check automatic-update opt-out and manual checks, offline errors, package-signature
+  rejection, progress, upgrade/restart, settings preservation and concurrent typing
+  during download. Verify a pending correction completes before installation.
 - Leave the utility idle and type normally for an extended session. Check memory,
   responsiveness, idle CPU and hook health. Verify no typed text is logged or sent
   over the network.
@@ -61,5 +77,6 @@ the visible text before verification, in which case correction is skipped.
 
 Keyboard hooks and accessibility changes cannot provide a transaction across
 arbitrary application state. CodeSwitch revalidates the field/caret/suffix, queues
-concurrent physical input briefly, and pauses on an unverifiable result. Review
+concurrent physical input briefly, and pauses the affected app on an unverifiable
+result (everywhere after failures in three apps). Review
 these races on actual systems before public approval; the release gate starts closed.

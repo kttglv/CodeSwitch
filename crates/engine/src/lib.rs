@@ -5,10 +5,10 @@ mod session;
 pub use frequency::Frequencies;
 pub use layout::{remap, Layout};
 use serde::{Deserialize, Serialize};
-pub use session::{Action, Input, Session, Snapshot};
+pub use session::{Action, ActionKind, Input, Session, Snapshot};
 
 pub const MAX_WORD_CHARS: usize = 64;
-pub const POLICY_VERSION: &str = "conservative-v2";
+pub const POLICY_VERSION: &str = "conservative-v3";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Candidate {
@@ -71,7 +71,14 @@ impl Detector {
                 }
                 let source = self.frequencies.zipf(word, layout);
                 let alternative = self.frequencies.zipf(&mapped, layout.other());
-                if source >= 2.0 || alternative < 3.5 || alternative - source < 2.5 {
+                // Short remaps often land on rare real words; longer ones rarely do,
+                // so inflected and less common long words need a lower frequency.
+                let minimum = if mapped.chars().count() >= 5 {
+                    2.5
+                } else {
+                    3.5
+                };
+                if source >= 2.0 || alternative < minimum || alternative - source < 2.5 {
                     continue;
                 }
                 // Don't rewrite a known word just because punctuation can be stripped
@@ -99,6 +106,13 @@ impl Detector {
     pub fn is_input_character(c: char) -> bool {
         layout::letter_position(c) || surrounding(c)
     }
+}
+
+/// Normalized form used to match a word against the user's never-correct list:
+/// lowercase, without surrounding whitespace or punctuation.
+pub fn word_key(text: &str) -> String {
+    text.trim_matches(|c: char| c.is_whitespace() || surrounding(c))
+        .to_lowercase()
 }
 
 fn surrounding(c: char) -> bool {
@@ -187,6 +201,38 @@ mod tests {
                 Some(expected.into()),
                 "{wrong}"
             );
+        }
+    }
+
+    #[test]
+    fn corrects_less_common_long_words() {
+        // Inflected Russian and less common English forms (Zipf 2.5–3.5) are
+        // common in normal typing. Examples come from the development corpus.
+        for (wrong, expected, source) in [
+            ("yjvbyfkmyj", "номинально", Layout::English),
+            ("abkjcjacrfz", "философская", Layout::English),
+            ("yfvtnbkfcm", "наметилась", Layout::English),
+            ("ащкишввштп", "forbidding", Layout::Russian),
+            ("ыгььфкшыув", "summarised", Layout::Russian),
+        ] {
+            assert_eq!(
+                detector().analyze(wrong, source).map(|c| c.replacement),
+                Some(expected.into()),
+                "{wrong}"
+            );
+        }
+    }
+
+    #[test]
+    fn keeps_strict_threshold_for_short_words() {
+        // Short runs collide with rare real words far more often, so 3–4 letter
+        // targets still need Zipf 3.5.
+        for (wrong, source) in [
+            ("vbat", Layout::English),
+            ("tple", Layout::English),
+            ("Лщаш", Layout::Russian),
+        ] {
+            assert!(detector().analyze(wrong, source).is_none(), "{wrong}");
         }
     }
 
