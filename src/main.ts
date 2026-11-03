@@ -1,4 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import "./style.css";
 
 type Layout = "english" | "russian";
@@ -10,6 +11,7 @@ interface Settings {
   allowedApps: string[];
   previewConsent: boolean;
   onboardingComplete: boolean;
+  automaticUpdateChecks: boolean;
 }
 interface Status {
   settings: Settings;
@@ -23,14 +25,18 @@ interface Status {
   state: string;
   lastError: string | null;
   defaultExclusions: string[];
+  version: string;
+  updates: UpdateStatus;
 }
+interface UpdateStatus { phase: string; version: string | null; notes: string | null; downloaded: number; total: number | null; message: string | null }
 interface Candidate { original: string; replacement: string; target: Layout }
 
 const native = isTauri();
 let status: Status = {
-  settings: { enabled: false, launchAtLogin: false, undoShortcut: "Meta+Alt+Backspace", excludedApps: [], allowedApps: [], previewConsent: false, onboardingComplete: false },
+  settings: { enabled: false, launchAtLogin: false, undoShortcut: "Meta+Alt+Backspace", excludedApps: [], allowedApps: [], previewConsent: false, onboardingComplete: false, automaticUpdateChecks: true },
   platform: "macos", permissionGranted: false, hookActive: false, englishInstalled: false, russianInstalled: false,
   publicReleaseApproved: false, developmentBuild: false, state: "paused", lastError: null, defaultExclusions: [],
+  version: "0.1.0", updates: { phase: "", version: null, notes: null, downloaded: 0, total: null, message: null },
 };
 let saving = false;
 let previewRequest = 0;
@@ -65,13 +71,14 @@ element("app").innerHTML = `
       <button data-page="exclusions" class="nav-item">${icon("apps")}App exclusions</button>
       <button data-page="about" class="nav-item">${icon("shield")}Privacy & about</button>
     </nav>
-    <div class="sidebar-bottom"><div class="local-note">${icon("shield")}On your device. Always.</div><span class="version">CodeSwitch 0.1.0 <span>Preview</span></span></div>
+    <div class="sidebar-bottom"><div class="local-note">${icon("shield")}On your device. Always.</div><span class="version"><span id="app-version">CodeSwitch 0.1.0</span> <span>Preview</span></span></div>
   </aside>
   <div class="workspace">
     <header class="topbar"><span id="page-title">Overview</span><div class="language-pair"><span class="language-dot"></span>EN<span class="pair-arrow">↔</span>RU</div></header>
     <main>
       <div id="browser-notice" class="notice" hidden>You're viewing the interface in a browser. Open the desktop app to check permissions and try correction.</div>
       <div id="error" class="error" role="alert" hidden></div>
+      <div id="update-notice" class="notice update-notice" role="status" hidden><span id="update-notice-text"></span><button id="view-update" class="text-button">View update</button></div>
       <section id="page-overview" class="page">
         <div class="eyebrow">A LITTLE LESS FRICTION</div>
         <h1>Your words.<br>The right language.</h1>
@@ -103,6 +110,15 @@ element("app").innerHTML = `
         <div class="eyebrow">MAKE IT YOURS</div><h1>Quietly, in the<br>background.</h1><p class="intro">A few small preferences. Then, back to your words.</p>
         <div class="panel"><div class="preference-row"><div><h2>Launch at login</h2><p>Keep CodeSwitch in your menu bar or system tray.</p></div><input id="launch-at-login" class="checkbox" type="checkbox" aria-label="Launch at login"></div><div class="preference-row"><div><h2>Undo shortcut</h2><p>Restore the last correction and its previous keyboard layout.<br>Available until you type again or move the caret.</p></div><input id="undo-shortcut" class="shortcut-input" aria-label="Undo shortcut" placeholder="Meta+Alt+Backspace"></div><div class="panel-footer"><span class="muted">Modifiers: Ctrl, Alt, Shift, Meta. Keys: Backspace, F8–F10.</span><button id="save-preferences" class="button primary">Save preferences</button></div></div>
         <div class="info-card">${icon("info")}<p>Correction favors certainty. Short words, names, unfamiliar words, and matches that could belong to either language are left unchanged. Enter and Tab never trigger correction.</p></div>
+        <div class="panel updates-panel">
+          <div class="section-heading"><h2>App updates</h2><span id="update-current-version" class="muted"></span></div>
+          <div class="preference-row"><div><h3>Check automatically</h3><p>Check GitHub Releases at startup and once a day.<br>Your typing is never included in update requests.</p></div><input id="automatic-update-checks" class="checkbox" type="checkbox" aria-label="Check for updates automatically"></div>
+          <p id="update-status" class="update-status" role="status" aria-live="polite">Check for a new version of CodeSwitch.</p>
+          <progress id="update-progress" max="100" hidden aria-label="Update download progress"></progress>
+          <p id="update-notes" class="update-notes" hidden></p>
+          <div class="update-actions"><button id="check-updates" class="button">Check for updates</button><button id="install-update" class="button primary" hidden>Update and restart</button></div>
+          <p class="muted update-footnote">Packages are verified before installation. CodeSwitch restarts only when you choose to install.</p>
+        </div>
       </section>
       <section id="page-exclusions" class="page" hidden>
         <div class="eyebrow">A PLACE FOR EVERYTHING</div><h1>Choose where<br>it works.</h1><p class="intro">Terminals and code editors are excluded by default.<br>Allow an app or add an exclusion using its exact identifier.</p>
@@ -112,7 +128,7 @@ element("app").innerHTML = `
       </section>
       <section id="page-about" class="page" hidden>
         <div class="eyebrow">BUILT ON TRUST</div><h1>Your words<br>stay yours.</h1><p class="intro">A small, open-source utility. No account needed.</p>
-        <div class="panel privacy-details"><h2>Local by design</h2><p>Detection runs entirely on your device. CodeSwitch has no analytics, accounts, cloud inference, or automatic updater. It never writes your typing to logs or sends it over the network.</p><h2>Only what it needs</h2><p>A short, temporary word buffer and the immediately reversible correction live in memory. CodeSwitch verifies the focused field before making a change. Protected and unsupported fields are skipped.</p><h2>Honest about boundaries</h2><p>Only standard US English and Russian layouts are supported. Custom editors, input methods, remote desktops, and elevated Windows apps may not support correction. Automatic correction remains gated until the release benchmark and platform validation pass.</p><h2>Free & open source</h2><p>CodeSwitch application code is MIT licensed. Word frequencies are from <strong>wordfreq by Robyn Speer</strong>, with data under CC BY-SA 4.0. SUBTLEX authors: <strong>Marc Brysbaert et al.</strong>; SUBTLEX is freely available data. Complete licenses and source attributions ship with the app under <code>licenses/</code>.</p><div class="about-version">CodeSwitch 0.1.0 <span>English ↔ Russian</span></div></div>
+        <div class="panel privacy-details"><h2>Local by design</h2><p>Detection runs entirely on your device. CodeSwitch has no analytics, accounts or cloud inference. It never writes your typing to logs or sends it over the network.</p><h2>Updates</h2><p>Optional automatic checks contact GitHub Releases. Downloads happen only when you choose Update and restart, and every package is verified with the app's update signing key. GitHub receives ordinary request metadata such as your IP address and platform. Update requests never include typed text or app rules. Disable automatic checks in Preferences.</p><h2>Only what it needs</h2><p>A short, temporary word buffer and the immediately reversible correction live in memory. CodeSwitch verifies the focused field before making a change. Protected and unsupported fields are skipped.</p><h2>Honest about boundaries</h2><p>Only standard US English and Russian layouts are supported. Custom editors, input methods, remote desktops, and elevated Windows apps may not support correction. Automatic correction remains gated until the release benchmark and platform validation pass.</p><h2>Free & open source</h2><p>CodeSwitch application code is MIT licensed. Word frequencies are from <strong>wordfreq by Robyn Speer</strong>, with data under CC BY-SA 4.0. SUBTLEX authors: <strong>Marc Brysbaert et al.</strong>; SUBTLEX is freely available data. Complete licenses and source attributions ship with the app under <code>licenses/</code>.</p><div class="about-version"><span id="about-version">CodeSwitch 0.1.0</span><span>English ↔ Russian</span></div></div>
       </section>
       <div id="toast" class="toast" role="status" hidden></div>
     </main>
@@ -148,13 +164,13 @@ function render() {
   const canEnable = native && layouts && status.permissionGranted && status.hookActive && settings.onboardingComplete && available;
   const toggle = element<HTMLButtonElement>("enabled");
   toggle.setAttribute("aria-checked", String(settings.enabled));
-  toggle.disabled = saving || (!settings.enabled && !canEnable);
-  const labels: Record<string, string> = { paused: "Paused", active: "Ready to switch", "needs-permission": "Needs keyboard access", "unsupported-field": "Waiting for a supported field", "excluded-app": "Paused in excluded app" };
+  toggle.disabled = saving || status.state === "updating" || (!settings.enabled && !canEnable);
+  const labels: Record<string, string> = { paused: "Paused", active: "Ready to switch", updating: "Preparing app update", "needs-permission": "Needs keyboard access", "unsupported-field": "Waiting for a supported field", "excluded-app": "Paused in excluded app" };
   const current = settings.enabled ? (labels[status.state] ?? "Ready to switch") : "Paused";
   element("status").innerHTML = "<i></i>";
   element("status").append(document.createTextNode(current));
-  element("status").classList.toggle("active", settings.enabled);
-  element("correction-description").textContent = settings.enabled ? "Watching for a clear match after each word." : canEnable ? "Ready when you are. Turn it on to start." : "Paused. Your keyboard is all yours.";
+  element("status").classList.toggle("active", settings.enabled && status.state === "active");
+  element("correction-description").textContent = status.state === "updating" ? "Finishing any correction before the app restarts." : settings.enabled ? "Watching for a clear match after each word." : canEnable ? "Ready when you are. Turn it on to start." : "Paused. Your keyboard is all yours.";
   element("browser-notice").hidden = native;
   element("setup").hidden = settings.onboardingComplete && status.permissionGranted && layouts && available;
   const ready = Number(status.permissionGranted) + Number(layouts);
@@ -189,7 +205,35 @@ function render() {
   }
   hint.append(document.createTextNode(" to undo"));
   renderApps();
+  renderUpdates();
   if (status.lastError) error(status.lastError);
+}
+
+function renderUpdates() {
+  const update = status.updates;
+  const busy = ["checking", "downloading", "installing"].includes(update.phase);
+  for (const id of ["app-version", "about-version"]) element(id).textContent = `CodeSwitch ${status.version}`;
+  element("update-current-version").textContent = `Installed: ${status.version}`;
+  element<HTMLInputElement>("automatic-update-checks").checked = status.settings.automaticUpdateChecks;
+  element<HTMLInputElement>("automatic-update-checks").disabled = !native || saving;
+  element<HTMLButtonElement>("check-updates").disabled = !native || busy;
+  const install = element<HTMLButtonElement>("install-update");
+  install.hidden = !update.version;
+  install.disabled = !native || busy;
+  const labels: Record<string, string> = {
+    checking: "Checking GitHub Releases…", current: "You're using the latest published version.",
+    available: `CodeSwitch ${update.version} is available.`, downloading: "Downloading and verifying the update…",
+    installing: "Installing the update. CodeSwitch will restart…",
+  };
+  element("update-status").textContent = update.message ?? labels[update.phase] ?? "Check for a new version of CodeSwitch.";
+  element("update-notes").textContent = update.notes;
+  element("update-notes").hidden = !update.notes;
+  const progress = element<HTMLProgressElement>("update-progress");
+  progress.hidden = update.phase !== "downloading";
+  if (update.total) progress.value = Math.min(100, update.downloaded / update.total * 100);
+  else progress.removeAttribute("value");
+  element("update-notice").hidden = !update.version;
+  element("update-notice-text").textContent = `CodeSwitch ${update.version} is available.`;
 }
 
 function renderApps() {
@@ -253,6 +297,23 @@ element("launch-at-login").addEventListener("change", () => { element("launch-at
 element("save-preferences").addEventListener("click", () => {
   void update({ launchAtLogin: element<HTMLInputElement>("launch-at-login").checked, undoShortcut: element<HTMLInputElement>("undo-shortcut").value.trim() }).then((saved) => { if (saved) { delete element("undo-shortcut").dataset.dirty; delete element("launch-at-login").dataset.dirty; toast("Preferences saved"); } });
 });
+element("view-update").addEventListener("click", () => showPage("preferences"));
+element("check-updates").addEventListener("click", () => {
+  status.updates.phase = "checking"; status.updates.message = null; renderUpdates();
+  void invoke<UpdateStatus>("check_for_updates").then((updates) => { status.updates = updates; renderUpdates(); })
+    .catch(() => { status.updates.phase = "error"; status.updates.message = "Could not check for updates. Try again."; renderUpdates(); });
+});
+element("install-update").addEventListener("click", () => {
+  status.updates.phase = "downloading"; status.updates.message = null; renderUpdates();
+  void invoke("install_update").catch(() => refresh());
+});
+element("automatic-update-checks").addEventListener("change", () => {
+  const enabled = element<HTMLInputElement>("automatic-update-checks").checked;
+  saving = true; render();
+  void invoke("set_update_checks", { enabled }).catch((cause) => error(String(cause)))
+    .finally(() => { saving = false; void refresh(); });
+});
+if (native) void listen("show-updates", () => showPage("preferences"));
 element("add-app").addEventListener("click", () => {
   const app = element<HTMLInputElement>("app-id").value.trim();
   if (!app) { error("Enter an exact app identifier first."); return; }

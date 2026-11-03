@@ -11,6 +11,12 @@ pub struct Settings {
     pub allowed_apps: Vec<String>,
     pub preview_consent: bool,
     pub onboarding_complete: bool,
+    #[serde(default = "default_update_checks")]
+    pub automatic_update_checks: bool,
+}
+
+fn default_update_checks() -> bool {
+    true
 }
 
 impl Default for Settings {
@@ -28,6 +34,7 @@ impl Default for Settings {
             allowed_apps: Vec::new(),
             preview_consent: false,
             onboarding_complete: false,
+            automatic_update_checks: true,
         }
     }
 }
@@ -158,6 +165,23 @@ pub const DEFAULT_EXCLUSIONS: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn existing_settings_keep_preferences_when_updater_is_added() {
+        let mut json = serde_json::to_value(Settings::default()).unwrap();
+        json.as_object_mut()
+            .unwrap()
+            .remove("automaticUpdateChecks");
+        json["enabled"] = true.into();
+        let settings: Settings = serde_json::from_value(json).unwrap();
+        assert!(settings.enabled && settings.automatic_update_checks);
+        let mut disabled = serde_json::to_value(settings).unwrap();
+        disabled["automaticUpdateChecks"] = false.into();
+        assert!(
+            !serde_json::from_value::<Settings>(disabled)
+                .unwrap()
+                .automatic_update_checks
+        );
+    }
     #[test]
     fn exclusions_are_case_insensitive_and_explicit_overrides_win() {
         let mut s = Settings::default();

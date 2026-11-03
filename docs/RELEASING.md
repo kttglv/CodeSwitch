@@ -51,8 +51,9 @@ CI builds/tests macOS arm64, macOS x64 and Windows x64, checks resource hashes,
 exports dependency notices, and uploads unsigned preview artifacts. The separate
 manual release workflow requires the benchmark/manual release gate to pass before
 building signed artifacts. Source, corpus and metadata fingerprints must match.
-No workflow publishes a GitHub Release automatically; installers are uploaded as
-workflow artifacts for review, then attached to a release by a maintainer.
+The signed release workflow collects all three platforms, creates `latest.json`
+and stages a **draft** GitHub Release. A maintainer reviews and publishes that
+draft; clients only see published releases. See [updater setup](UPDATES.md).
 
 ## Signing prerequisites
 
@@ -64,6 +65,9 @@ For a public release, configure environment-protected repository secrets:
 - Windows: `WINDOWS_CERTIFICATE` (base64 code-signing pfx),
   `WINDOWS_CERTIFICATE_PASSWORD`. Certificates must permit the chosen CI signing
   mechanism. For a hardware-backed key use a suitable signing service instead.
+- Both platforms: `TAURI_SIGNING_PRIVATE_KEY` and
+  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, matching the committed updater public key.
+  These are separate from OS signing certificates. See [key management](UPDATES.md).
 
 Never commit keys/certificates or bypass OS verification. The macOS workflow uses
 Tauri signing, notarization and stapling; the Windows workflow signs the app and

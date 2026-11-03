@@ -38,7 +38,9 @@ the detector without enabling system-wide changes.
 - Pause, launch at login, and per-app rules. Terminals/editors are excluded by default.
 - Verified editable fields only. Secure/unsupported fields and elevated Windows
   apps are skipped; the clipboard is never used.
-- No accounts, telemetry, cloud inference, typing history or automatic updater.
+- Optional automatic update checks through GitHub Releases, with verified packages
+  and user-initiated installation/restart. No typing is included in update requests.
+- No accounts, telemetry, cloud inference or typing history.
 
 ## Project structure
 

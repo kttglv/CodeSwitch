@@ -1,7 +1,13 @@
 # Privacy
 
 CodeSwitch performs language-layout detection locally. There are no accounts,
-analytics, network requests from the app, cloud models, or automatic update checks.
+analytics or cloud models. Optional automatic update checks contact GitHub Releases
+at startup and once per day. You can disable these checks in Preferences; manual
+checks remain available. Packages download only after you choose Update and restart.
+The updater validates the package signature and its signed version before installation.
+GitHub and its download providers receive ordinary network metadata such as your
+IP address, platform and request headers. Typed text, document contents, app rules
+and settings are never included in these requests. No GitHub token is embedded.
 An installer may download the Microsoft WebView2 runtime if it is not installed.
 
 The native keyboard hook sees input events supplied by the operating system.
@@ -25,7 +31,7 @@ The app does not request administrator privileges, bypass secure input, or modif
 elevated applications.
 
 Settings contain only your enable/pause preference, onboarding/preview choice,
-startup preference, undo shortcut, and application rules. They are stored in the
+startup preference, update-check preference, undo shortcut, and application rules. They are stored in the
 per-user application configuration directory as `settings.json`. Exit CodeSwitch
 and remove this file to reset settings. Use Preferences to disable launch at login
 before uninstalling.

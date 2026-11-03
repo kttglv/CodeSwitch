@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod settings;
+mod updates;
 mod worker;
 
 use codeswitch_engine::{Candidate, Detector, Layout};
@@ -25,6 +26,9 @@ pub struct Shared {
     pub detector: Detector,
     path: PathBuf,
     pub stopping: AtomicBool,
+    pub updating: AtomicBool,
+    pub update_paused: AtomicBool,
+    pub worker_stopped: AtomicBool,
     pub status: Mutex<String>,
     pub last_error: Mutex<Option<String>>,
 }
@@ -43,6 +47,8 @@ struct Status {
     state: String,
     last_error: Option<String>,
     default_exclusions: Vec<&'static str>,
+    version: &'static str,
+    updates: updates::Status,
 }
 
 fn release_approved() -> bool {
@@ -53,7 +59,7 @@ fn automatic_available(settings: &Settings) -> bool {
 }
 
 #[tauri::command]
-fn get_status(state: State<'_, Arc<Shared>>) -> Status {
+fn get_status(app: tauri::AppHandle, state: State<'_, Arc<Shared>>) -> Status {
     let (english, russian) = codeswitch_platform::layouts();
     Status {
         settings: state.settings.lock().unwrap().clone(),
@@ -64,10 +70,38 @@ fn get_status(state: State<'_, Arc<Shared>>) -> Status {
         russian_installed: russian,
         public_release_approved: release_approved(),
         development_build: cfg!(debug_assertions),
-        state: state.status.lock().unwrap().clone(),
+        state: if state.updating.load(Ordering::Acquire) {
+            "updating".into()
+        } else {
+            state.status.lock().unwrap().clone()
+        },
         last_error: state.last_error.lock().unwrap().clone(),
         default_exclusions: settings::DEFAULT_EXCLUSIONS.to_vec(),
+        version: env!("CARGO_PKG_VERSION"),
+        updates: app.state::<updates::Updates>().status(),
     }
+}
+
+#[tauri::command]
+async fn check_for_updates(app: tauri::AppHandle) -> updates::Status {
+    updates::check(&app, false).await
+}
+
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    updates::install(app).await
+}
+
+#[tauri::command]
+fn set_update_checks(enabled: bool, state: State<'_, Arc<Shared>>) -> Result<(), String> {
+    let mut settings = state.settings.lock().unwrap();
+    let previous = settings.automatic_update_checks;
+    settings.automatic_update_checks = enabled;
+    if let Err(error) = settings.save(&state.path) {
+        settings.automatic_update_checks = previous;
+        return Err(error);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -152,11 +186,16 @@ fn main() {
             show_window(app)
         }))
         .plugin(autostart.build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updates::Updates::default())
         .invoke_handler(tauri::generate_handler![
             get_status,
             request_permission,
             preview_word,
-            save_settings
+            save_settings,
+            check_for_updates,
+            install_update,
+            set_update_checks
         ])
         .setup(|app| {
             let path = app.path().app_config_dir()?.join("settings.json");
@@ -176,6 +215,9 @@ fn main() {
                 detector: Detector::bundled()?,
                 path,
                 stopping: AtomicBool::new(false),
+                updating: AtomicBool::new(false),
+                update_paused: AtomicBool::new(false),
+                worker_stopped: AtomicBool::new(true),
                 status: Mutex::new("paused".into()),
                 last_error: Mutex::new(error),
             });
@@ -189,7 +231,11 @@ fn main() {
                 None::<&str>,
             )?;
             let quit = MenuItem::with_id(app, "quit", "Quit CodeSwitch", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &toggle, &quit])?;
+            let check_updates =
+                MenuItem::with_id(app, "updates", "Check for updates…", true, None::<&str>)?;
+            app.state::<updates::Updates>()
+                .set_menu_item(check_updates.clone());
+            let menu = Menu::with_items(app, &[&show, &toggle, &check_updates, &quit])?;
             TrayIconBuilder::with_id("codeswitch")
                 .icon(tauri::image::Image::from_bytes(include_bytes!(
                     "../icons/tray.png"
@@ -209,10 +255,19 @@ fn main() {
                         }
                     }
                     "quit" => app.exit(0),
+                    "updates" => {
+                        show_window(app);
+                        app.emit("show-updates", ()).ok();
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            updates::check(&app, false).await;
+                        });
+                    }
                     _ => {}
                 })
                 .build(app)?;
             worker::spawn(shared, app.handle().clone());
+            updates::start(app.handle().clone());
             if std::env::args().any(|arg| arg == "--background") {
                 if let Some(window) = app.get_webview_window("main") {
                     window.hide()?;

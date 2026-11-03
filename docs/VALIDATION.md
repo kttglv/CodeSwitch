@@ -47,6 +47,9 @@ controls explicitly; never fall back to blind deletion or clipboard replacement.
   exclusions taking precedence. A custom unsupported editor still stays unsupported.
 - Save/reload preferences, configure undo, enable/disable launch at login, close
   to tray, quit, relaunch, and reset settings. Check standard-user installation.
+- Check automatic-update opt-out and manual checks, offline errors, package-signature
+  rejection, progress, upgrade/restart, settings preservation and concurrent typing
+  during download. Verify a pending correction completes before installation.
 - Leave the utility idle and type normally for an extended session. Check memory,
   responsiveness, idle CPU and hook health. Verify no typed text is logged or sent
   over the network.

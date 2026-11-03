@@ -20,15 +20,25 @@ pub fn spawn(shared: Arc<Shared>, app: tauri::AppHandle) {
             Ok(receiver) => receiver,
             Err(error) => {
                 *shared.last_error.lock().unwrap() = Some(error);
+                shared.update_paused.store(true, Ordering::Release);
                 return;
             }
         };
+        shared.worker_stopped.store(false, Ordering::Release);
         let mut session = Session::default();
         let mut pending: Option<Pending> = None;
         let mut previous: Option<Snapshot> = None;
         let mut setting_revision = String::new();
         while !shared.stopping.load(Ordering::Relaxed) {
             let received = receiver.recv_timeout(Duration::from_millis(25));
+            if shared.updating.load(Ordering::Acquire) && pending.is_none() {
+                platform::capture(false);
+                session.reset();
+                previous = None;
+                shared.update_paused.store(true, Ordering::Release);
+                continue;
+            }
+            shared.update_paused.store(false, Ordering::Release);
             let settings = shared.settings.lock().unwrap().clone();
             let signature = serde_json::to_string(&settings).unwrap_or_default();
             if signature != setting_revision {
@@ -164,6 +174,7 @@ pub fn spawn(shared: Arc<Shared>, app: tauri::AppHandle) {
             platform::finish(false);
         }
         platform::capture(false);
+        shared.worker_stopped.store(true, Ordering::Release);
     });
 }
 
