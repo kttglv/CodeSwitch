@@ -38,6 +38,10 @@ controls explicitly; never fall back to blind deletion or clipboard replacement.
   verify it is left unchanged and listed on the Words page. Repeat with learning
   off (no new entry) and after undoing a manual conversion (no new entry). Add a
   word in its converted form (e.g. `привет`) and verify `ghbdtn ` stays unchanged.
+- Turn off **Switch keyboard layout** in Preferences: verify an automatic
+  correction and a convert-shortcut conversion replace the text but leave the
+  layout (and the menu-bar indicator) unchanged, and undo restores the text only.
+  Turn it back on and verify the layout follows the corrected word again.
 - Press the convert shortcut after a word (with and without its trailing space),
   after a short word automatic correction skips (`ytn` → `нет`), and again to
   switch back. Verify the layout follows, undo restores it, and the shortcut passes

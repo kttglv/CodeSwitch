@@ -1,4 +1,4 @@
-use codeswitch_engine::{word_key, Action, ActionKind, MAX_WORD_CHARS};
+use codeswitch_engine::{word_key, Action, ActionKind, Layout, MAX_WORD_CHARS};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -26,6 +26,9 @@ pub struct Settings {
     /// Add a word to `ignored_words` when the user undoes its automatic correction.
     #[serde(default = "default_true")]
     pub learn_from_undo: bool,
+    /// Switch the keyboard layout to match a corrected or converted word.
+    #[serde(default = "default_true")]
+    pub switch_layout: bool,
     /// Interface language: "system", "en" or "ru".
     #[serde(default = "default_system")]
     pub language: String,
@@ -73,6 +76,7 @@ impl Default for Settings {
             convert_shortcut: default_convert_shortcut(),
             ignored_words: Vec::new(),
             learn_from_undo: true,
+            switch_layout: true,
             language: default_system(),
             theme: default_system(),
         }
@@ -148,6 +152,15 @@ impl Settings {
             let word = word_key(word);
             word == original || word == replacement
         })
+    }
+
+    /// With layout switching off, a correction or conversion keeps the layout the
+    /// user is typing in. An undo still restores the layout recorded before its edit.
+    pub fn retarget(&self, mut action: Action, current: Layout) -> Action {
+        if !self.switch_layout && !matches!(action.kind, ActionKind::Undo { .. }) {
+            action.target = current;
+        }
+        action
     }
 
     /// After a verified undo of an automatic correction, remember the restored
@@ -274,7 +287,12 @@ mod tests {
     fn existing_settings_gain_word_list_and_convert_defaults() {
         let mut json = serde_json::to_value(Settings::default()).unwrap();
         let object = json.as_object_mut().unwrap();
-        for key in ["convertShortcut", "ignoredWords", "learnFromUndo"] {
+        for key in [
+            "convertShortcut",
+            "ignoredWords",
+            "learnFromUndo",
+            "switchLayout",
+        ] {
             object.remove(key);
         }
         object.insert("undoShortcut".into(), "Ctrl+Alt+F9".into());
@@ -285,6 +303,10 @@ mod tests {
             Settings::default().convert_shortcut
         );
         assert!(settings.ignored_words.is_empty() && settings.learn_from_undo);
+        assert!(
+            settings.switch_layout,
+            "existing users keep switching layouts"
+        );
     }
 
     #[test]
@@ -379,6 +401,41 @@ mod tests {
         assert!(s.learn_from(&undo(true)));
         assert_eq!(s.ignored_words, ["ghbdtn"], "the restored, typed form");
         assert!(s.ignores(&action("ghbdtn ", "привет ")));
+    }
+
+    #[test]
+    fn turning_off_layout_switching_keeps_the_current_layout() {
+        let mut s = Settings::default();
+        let correction = action("ghbdtn ", "привет ");
+        assert_eq!(
+            s.retarget(correction.clone(), Layout::English).target,
+            Layout::Russian,
+            "switching is on by default"
+        );
+        s.switch_layout = false;
+        assert_eq!(
+            s.retarget(correction, Layout::English).target,
+            Layout::English
+        );
+        let conversion = Action {
+            kind: ActionKind::Manual,
+            ..action("ghbdtn", "привет")
+        };
+        assert_eq!(
+            s.retarget(conversion, Layout::English).target,
+            Layout::English
+        );
+        let undo = Action {
+            expected: "привет ".into(),
+            replacement: "ghbdtn ".into(),
+            target: Layout::Russian,
+            kind: ActionKind::Undo { automatic: true },
+        };
+        assert_eq!(
+            s.retarget(undo, Layout::English).target,
+            Layout::Russian,
+            "undo restores the layout it recorded"
+        );
     }
 
     #[test]

@@ -17,6 +17,7 @@ interface Settings {
   convertShortcut: string;
   ignoredWords: string[];
   learnFromUndo: boolean;
+  switchLayout: boolean;
   language: LanguageSetting;
   theme: ThemeSetting;
 }
@@ -43,7 +44,7 @@ interface Candidate { original: string; replacement: string; target: Layout }
 
 const native = isTauri();
 let status: Status = {
-  settings: { enabled: false, launchAtLogin: false, undoShortcut: "Meta+Alt+Backspace", excludedApps: [], allowedApps: [], previewConsent: false, onboardingComplete: false, automaticUpdateChecks: true, convertShortcut: "Ctrl+Meta+Backspace", ignoredWords: [], learnFromUndo: true, language: "system", theme: "system" },
+  settings: { enabled: false, launchAtLogin: false, undoShortcut: "Meta+Alt+Backspace", excludedApps: [], allowedApps: [], previewConsent: false, onboardingComplete: false, automaticUpdateChecks: true, convertShortcut: "Ctrl+Meta+Backspace", ignoredWords: [], learnFromUndo: true, switchLayout: true, language: "system", theme: "system" },
   platform: "macos", permissionGranted: false, hookActive: false, englishInstalled: false, russianInstalled: false,
   publicReleaseApproved: false, developmentBuild: false, state: "paused", lastError: null, defaultExclusions: [],
   version: "0.1.0", updates: { phase: "", version: null, notes: null, downloaded: 0, total: null, message: null },
@@ -129,6 +130,7 @@ element("app").innerHTML = `
           <div class="preference-row"><div><h3 data-i18n="interface.language"></h3><p data-i18n="interface.languageHint"></p></div><div class="segmented" id="language-choice" role="radiogroup" data-i18n-label="interface.language"><button role="radio" data-value="system" data-i18n="interface.system"></button><button role="radio" data-value="en" lang="en">English</button><button role="radio" data-value="ru" lang="ru">Русский</button></div></div>
           <div class="preference-row"><div><h3 data-i18n="interface.appearance"></h3><p data-i18n="interface.appearanceHint"></p></div><div class="segmented" id="theme-choice" role="radiogroup" data-i18n-label="interface.appearance"><button role="radio" data-value="system" data-i18n="interface.system"></button><button role="radio" data-value="light" data-i18n="interface.light"></button><button role="radio" data-value="dark" data-i18n="interface.dark"></button></div></div>
         </div>
+        <div class="panel"><div class="preference-row"><div><h2 data-i18n="prefs.switchLayout"></h2><p data-i18n="prefs.switchLayoutHint"></p></div><input id="switch-layout" class="checkbox" type="checkbox" data-i18n-label="prefs.switchLayout"></div></div>
         <div class="panel"><div class="preference-row"><div><h2 data-i18n="prefs.launch"></h2><p data-i18n="prefs.launchHint"></p></div><input id="launch-at-login" class="checkbox" type="checkbox" data-i18n-label="prefs.launch"></div><div class="preference-row"><div><h2 data-i18n="prefs.undo"></h2><p data-i18n="prefs.undoHint"></p></div><input id="undo-shortcut" class="shortcut-input" data-i18n-label="prefs.undo" placeholder="Meta+Alt+Backspace"></div><div class="preference-row"><div><h2 data-i18n="prefs.convert"></h2><p data-i18n="prefs.convertHint"></p></div><input id="convert-shortcut" class="shortcut-input" data-i18n-label="prefs.convert" data-i18n-placeholder="prefs.off"></div><div class="panel-footer"><span class="muted" data-i18n="prefs.keys"></span><button id="save-preferences" class="button primary" data-i18n="prefs.save"></button></div></div>
         <div class="info-card">${icon("info")}<p data-i18n="prefs.info"></p></div>
         <div class="panel updates-panel">
@@ -234,6 +236,8 @@ function render() {
   if (document.activeElement !== convert && !convert.dataset.dirty) convert.value = settings.convertShortcut;
   element<HTMLInputElement>("learn-from-undo").checked = settings.learnFromUndo;
   element<HTMLInputElement>("learn-from-undo").disabled = !native || saving;
+  element<HTMLInputElement>("switch-layout").checked = settings.switchLayout;
+  element<HTMLInputElement>("switch-layout").disabled = !native || saving;
   element<HTMLButtonElement>("add-word").disabled = !native || saving;
   element<HTMLButtonElement>("save-preferences").disabled = !native || saving;
   element<HTMLButtonElement>("add-app").disabled = !native || saving;
@@ -411,6 +415,7 @@ element("add-app").addEventListener("click", () => {
 });
 
 element("learn-from-undo").addEventListener("change", () => { void update({ learnFromUndo: element<HTMLInputElement>("learn-from-undo").checked }); });
+element("switch-layout").addEventListener("change", () => { void update({ switchLayout: element<HTMLInputElement>("switch-layout").checked }); });
 function addWord() {
   const word = element<HTMLInputElement>("word-entry").value.trim();
   if (!word) { error(t("words.enter")); return; }

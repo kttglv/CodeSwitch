@@ -99,7 +99,12 @@ pub fn spawn(shared: Arc<Shared>, app: tauri::AppHandle) {
                             ActionKind::Undo { .. }
                         ));
                         platform::finish(true);
-                        feedback(&shared, &app, &transaction.action);
+                        feedback(
+                            &shared,
+                            &app,
+                            &transaction.action,
+                            transaction.before.snapshot.layout,
+                        );
                         learn(&shared, &app, &transaction.action);
                         status(&shared, &app, "active");
                     } else {
@@ -175,7 +180,8 @@ pub fn spawn(shared: Arc<Shared>, app: tauri::AppHandle) {
             };
             let action = session
                 .accept(input, &focus.snapshot, &shared.detector)
-                .filter(|action| action.kind != ActionKind::Automatic || !settings.ignores(action));
+                .filter(|action| action.kind != ActionKind::Automatic || !settings.ignores(action))
+                .map(|action| settings.retarget(action, focus.snapshot.layout));
             previous = Some(focus.snapshot.position());
             if let Some(action) = action {
                 match focus.replace(&action) {
@@ -294,9 +300,9 @@ pub(crate) fn tooltip(shared: &Shared, app: &tauri::AppHandle) {
     }));
 }
 
-/// Count kept corrections and briefly show the new layout next to the tray icon
+/// Count kept corrections and briefly show a changed layout next to the tray icon
 /// (macOS menu bar; Windows shows the count in the tray tooltip).
-fn feedback(shared: &Arc<Shared>, app: &tauri::AppHandle, action: &Action) {
+fn feedback(shared: &Arc<Shared>, app: &tauri::AppHandle, action: &Action, previous: Layout) {
     if matches!(action.kind, ActionKind::Undo { .. }) {
         // Only this worker thread writes the count, so load-then-subtract is exact.
         if shared.corrections.load(Ordering::Relaxed) > 0 {
@@ -306,6 +312,9 @@ fn feedback(shared: &Arc<Shared>, app: &tauri::AppHandle, action: &Action) {
         shared.corrections.fetch_add(1, Ordering::Relaxed);
     }
     tooltip(shared, app);
+    if action.target == previous {
+        return;
+    }
     let Some(tray) = app.tray_by_id("codeswitch") else {
         return;
     };
