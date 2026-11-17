@@ -62,14 +62,9 @@ const icons: Record<string, string> = {
   settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/>',
   apps: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 9h18M8 9v11"/>',
   shield: '<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/>',
-  arrow: '<path d="M4 8h16l-4-4M20 16H4l4 4"/>',
-  chevron: '<path d="m9 5 7 7-7 7"/>',
-  check: '<path d="m5 12 4 4L19 6"/>',
-  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v.1"/>',
   words: '<path d="M4 6h16M4 12h10M4 18h7"/><path d="m15 15 5 5M20 15l-5 5"/>',
-  keyboard: '<rect x="2" y="5" width="20" height="14" rx="3"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 15h10"/>',
 };
-function icon(name: string) { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] ?? icons.info}</svg>`; }
+function icon(name: string) { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] ?? ""}</svg>`; }
 function element<T extends HTMLElement = HTMLElement>(id: string): T {
   const result = document.getElementById(id);
   if (!result) throw new Error(`Missing UI element: ${id}`);
@@ -78,89 +73,151 @@ function element<T extends HTMLElement = HTMLElement>(id: string): T {
 
 element("app").innerHTML = `
   <aside class="sidebar">
-    <a class="brand" href="#overview" data-i18n-label="brand.label"><span class="brand-mark">${icon("arrow")}</span>CodeSwitch</a>
-    <div class="nav-caption" data-i18n="nav.caption"></div>
-    <nav aria-label="Main navigation">
+    <a class="brand" href="#overview" data-i18n-label="brand.label">CodeSwitch</a>
+    <nav class="nav" aria-label="Main navigation">
       <button data-page="overview" class="nav-item selected">${icon("overview")}<span data-i18n="nav.overview"></span></button>
       <button data-page="preferences" class="nav-item">${icon("settings")}<span data-i18n="nav.preferences"></span></button>
       <button data-page="exclusions" class="nav-item">${icon("apps")}<span data-i18n="nav.exclusions"></span></button>
       <button data-page="words" class="nav-item">${icon("words")}<span data-i18n="nav.words"></span></button>
       <button data-page="about" class="nav-item">${icon("shield")}<span data-i18n="nav.about"></span></button>
     </nav>
-    <div class="sidebar-bottom"><div class="local-note">${icon("shield")}<span data-i18n="sidebar.local"></span></div><span class="version"><span id="app-version">CodeSwitch 0.1.0</span> <span data-i18n="sidebar.preview"></span></span></div>
   </aside>
   <div class="workspace">
-    <header class="topbar"><span id="page-title"></span><div class="language-pair"><span class="language-dot"></span>EN<span class="pair-arrow">↔</span>RU</div></header>
     <main>
       <div id="browser-notice" class="notice" data-i18n="browser.notice" hidden></div>
       <div id="error" class="error" role="alert" hidden></div>
       <div id="suspended" role="status"></div>
-      <div id="update-notice" class="notice update-notice" role="status" hidden><span id="update-notice-text"></span><button id="view-update" class="text-button" data-i18n="update.view"></button></div>
+      <div id="update-notice" class="notice" role="status" hidden><span id="update-notice-text"></span><button id="view-update" class="text-button" data-i18n="update.view"></button></div>
+
       <section id="page-overview" class="page">
-        <div class="eyebrow" data-i18n="overview.eyebrow"></div>
-        <h1 data-i18n="overview.title"></h1>
-        <p class="intro" data-i18n="overview.intro"></p>
-        <div class="control-card">
-          <div class="control-symbol">${icon("arrow")}</div>
-          <div class="control-copy"><h2 data-i18n="control.title"></h2><p id="correction-description"></p></div>
-          <button id="enabled" class="switch" role="switch" aria-checked="false" data-i18n-label="control.title"><span></span></button>
-          <div class="control-footer"><span id="status" class="status-pill"><i></i></span><span id="correction-count"></span></div>
+        <header class="page-header"><h1 data-i18n="nav.overview"></h1><p data-i18n="overview.intro"></p></header>
+        <div class="panel">
+          <div class="row">
+            <div class="row-text"><h2 class="row-title" data-i18n="control.title"></h2><p class="muted"><span id="status"></span><span id="correction-count"></span></p></div>
+            <button id="enabled" class="switch" role="switch" aria-checked="false" data-i18n-label="control.title"><span></span></button>
+          </div>
         </div>
-        <div id="setup" class="setup-card">
-          <div class="section-heading"><h2 data-i18n="setup.title"></h2><span id="setup-progress" class="muted"></span></div>
-          <div class="setup-row"><span id="permission-check" class="step-number">1</span><div><h3 data-i18n="setup.permission"></h3><p id="permission-description"></p></div><button id="permission" class="button small"></button></div>
-          <div class="setup-row"><span id="layout-check" class="step-number">2</span><div><h3 data-i18n="setup.layouts"></h3><p id="layout-description"></p></div><button id="layout-help" class="text-button"><span data-i18n="setup.howTo"></span> ${icon("chevron")}</button></div>
-          <div id="layout-instructions" class="help" hidden></div>
-          <label id="preview-consent-row" class="preview-consent" hidden><input id="preview-consent" type="checkbox"> <span data-i18n="setup.consent"></span></label>
-          <div class="setup-bottom"><span id="release-note"></span><button id="finish-setup" class="button primary small"></button></div>
+        <div id="setup" class="panel">
+          <div class="panel-header"><h2 class="panel-title" data-i18n="setup.title"></h2><span id="setup-progress" class="muted"></span></div>
+          <div class="row">
+            <div class="row-text"><h3 class="row-title" data-i18n="setup.permission"></h3><p id="permission-description" class="muted"></p></div>
+            <button id="permission" class="button"></button>
+          </div>
+          <div class="row">
+            <div class="row-text"><h3 class="row-title" data-i18n="setup.layouts"></h3><p id="layout-description" class="muted"></p><p id="layout-instructions" hidden></p></div>
+            <button id="layout-help" class="text-button" data-i18n="setup.howTo" aria-expanded="false" aria-controls="layout-instructions"></button>
+          </div>
+          <label id="preview-consent-row" class="row check-row" hidden><input id="preview-consent" class="checkbox" type="checkbox"><span data-i18n="setup.consent"></span></label>
+          <div class="row"><p id="release-note" class="muted"></p><button id="finish-setup" class="button primary"></button></div>
         </div>
-        <div class="demo-card">
-          <div class="section-heading"><h2 data-i18n="demo.title"></h2><span class="tiny-badge" data-i18n="demo.offline"></span></div>
-          <p class="muted" data-i18n="demo.subtitle"></p>
-          <div class="demo-conversion"><span class="wrong-word">ghbdtn</span><span class="demo-arrow">${icon("arrow")}</span><span class="right-word" lang="ru">привет<span class="cursor"></span></span></div>
-          <div class="try-area"><label for="test-word" data-i18n="demo.try"></label><div class="test-controls"><input id="test-word" value="ghbdtn" data-i18n-placeholder="demo.placeholder" maxlength="64" autocomplete="off" spellcheck="false" autocapitalize="off"><select id="test-layout" data-i18n-label="demo.layout"><option value="english" data-i18n="demo.typedEn"></option><option value="russian" data-i18n="demo.typedRu"></option></select></div><div id="test-result" class="test-result" aria-live="polite"></div></div>
-          <div class="demo-footer">${icon("keyboard")}<span class="demo-after" data-i18n="demo.after"></span><span id="convert-hint"></span><span id="undo-hint"></span></div>
+        <div class="panel stack">
+          <label class="panel-title" for="test-word" data-i18n="demo.try"></label>
+          <div class="field-group"><input id="test-word" value="ghbdtn" data-i18n-placeholder="demo.placeholder" maxlength="64" autocomplete="off" spellcheck="false" autocapitalize="off"><select id="test-layout" data-i18n-label="demo.layout"><option value="english" data-i18n="demo.typedEn"></option><option value="russian" data-i18n="demo.typedRu"></option></select></div>
+          <p id="test-result" aria-live="polite"></p>
+          <p class="muted shortcut-hints"><span id="convert-hint"></span><span id="undo-hint"></span></p>
         </div>
-        <div class="privacy-line">${icon("shield")}<span data-i18n="privacy.line"></span></div>
       </section>
+
       <section id="page-preferences" class="page" hidden>
-        <div class="eyebrow" data-i18n="prefs.eyebrow"></div><h1 data-i18n="prefs.title"></h1><p class="intro" data-i18n="prefs.intro"></p>
-        <div class="panel interface-panel">
-          <div class="section-heading"><h2 data-i18n="interface.title"></h2></div>
-          <div class="preference-row"><div><h3 data-i18n="interface.language"></h3><p data-i18n="interface.languageHint"></p></div><div class="segmented" id="language-choice" role="radiogroup" data-i18n-label="interface.language"><button role="radio" data-value="system" data-i18n="interface.system"></button><button role="radio" data-value="en" lang="en">English</button><button role="radio" data-value="ru" lang="ru">Русский</button></div></div>
-          <div class="preference-row"><div><h3 data-i18n="interface.appearance"></h3><p data-i18n="interface.appearanceHint"></p></div><div class="segmented" id="theme-choice" role="radiogroup" data-i18n-label="interface.appearance"><button role="radio" data-value="system" data-i18n="interface.system"></button><button role="radio" data-value="light" data-i18n="interface.light"></button><button role="radio" data-value="dark" data-i18n="interface.dark"></button></div></div>
+        <header class="page-header"><h1 data-i18n="nav.preferences"></h1></header>
+        <div class="panel">
+          <div class="panel-header"><h2 class="panel-title" data-i18n="interface.title"></h2></div>
+          <div class="row">
+            <div class="row-text"><h3 class="row-title" data-i18n="interface.language"></h3><p class="muted" data-i18n="interface.languageHint"></p></div>
+            <div class="segmented" id="language-choice" role="radiogroup" data-i18n-label="interface.language"><button role="radio" data-value="system" data-i18n="interface.system"></button><button role="radio" data-value="en" lang="en">English</button><button role="radio" data-value="ru" lang="ru">Русский</button></div>
+          </div>
+          <div class="row">
+            <div class="row-text"><h3 class="row-title" data-i18n="interface.appearance"></h3></div>
+            <div class="segmented" id="theme-choice" role="radiogroup" data-i18n-label="interface.appearance"><button role="radio" data-value="system" data-i18n="interface.system"></button><button role="radio" data-value="light" data-i18n="interface.light"></button><button role="radio" data-value="dark" data-i18n="interface.dark"></button></div>
+          </div>
+          <div class="row">
+            <div class="row-text"><label class="row-title" for="switch-layout" data-i18n="prefs.switchLayout"></label><p class="muted" data-i18n="prefs.switchLayoutHint"></p></div>
+            <input id="switch-layout" class="checkbox" type="checkbox" data-i18n-label="prefs.switchLayout">
+          </div>
         </div>
-        <div class="panel"><div class="preference-row"><div><h2 data-i18n="prefs.switchLayout"></h2><p data-i18n="prefs.switchLayoutHint"></p></div><input id="switch-layout" class="checkbox" type="checkbox" data-i18n-label="prefs.switchLayout"></div></div>
-        <div class="panel"><div class="preference-row"><div><h2 data-i18n="prefs.launch"></h2><p data-i18n="prefs.launchHint"></p></div><input id="launch-at-login" class="checkbox" type="checkbox" data-i18n-label="prefs.launch"></div><div class="preference-row"><div><h2 data-i18n="prefs.undo"></h2><p data-i18n="prefs.undoHint"></p></div><input id="undo-shortcut" class="shortcut-input" data-i18n-label="prefs.undo" placeholder="Meta+Alt+Backspace"></div><div class="preference-row"><div><h2 data-i18n="prefs.convert"></h2><p data-i18n="prefs.convertHint"></p></div><input id="convert-shortcut" class="shortcut-input" data-i18n-label="prefs.convert" data-i18n-placeholder="prefs.off"></div><div class="panel-footer"><span class="muted" data-i18n="prefs.keys"></span><button id="save-preferences" class="button primary" data-i18n="prefs.save"></button></div></div>
-        <div class="info-card">${icon("info")}<p data-i18n="prefs.info"></p></div>
-        <div class="panel updates-panel">
-          <div class="section-heading"><h2 data-i18n="updates.title"></h2><span id="update-current-version" class="muted"></span></div>
-          <div class="preference-row"><div><h3 data-i18n="updates.auto"></h3><p data-i18n="updates.autoHint"></p></div><input id="automatic-update-checks" class="checkbox" type="checkbox" data-i18n-label="updates.autoLabel"></div>
-          <p id="update-status" class="update-status" role="status" aria-live="polite"></p>
-          <progress id="update-progress" max="100" hidden data-i18n-label="updates.progress"></progress>
-          <p id="update-notes" class="update-notes" hidden></p>
-          <div class="update-actions"><button id="check-updates" class="button" data-i18n="updates.check"></button><button id="install-update" class="button primary" data-i18n="updates.install" hidden></button></div>
-          <p class="muted update-footnote" data-i18n="updates.footnote"></p>
+        <div class="panel">
+          <div class="panel-header"><h2 class="panel-title" data-i18n="prefs.shortcutsTitle"></h2></div>
+          <div class="row">
+            <div class="row-text"><label class="row-title" for="launch-at-login" data-i18n="prefs.launch"></label></div>
+            <input id="launch-at-login" class="checkbox" type="checkbox" data-i18n-label="prefs.launch">
+          </div>
+          <div class="row">
+            <div class="row-text"><label class="row-title" for="undo-shortcut" data-i18n="prefs.undo"></label><p class="muted" data-i18n="prefs.undoHint"></p></div>
+            <input id="undo-shortcut" class="shortcut-input" data-i18n-label="prefs.undo" placeholder="Meta+Alt+Backspace">
+          </div>
+          <div class="row">
+            <div class="row-text"><label class="row-title" for="convert-shortcut" data-i18n="prefs.convert"></label><p class="muted" data-i18n="prefs.convertHint"></p></div>
+            <input id="convert-shortcut" class="shortcut-input" data-i18n-label="prefs.convert" data-i18n-placeholder="prefs.off">
+          </div>
+          <div class="row"><p class="muted" data-i18n="prefs.keys"></p><button id="save-preferences" class="button primary" data-i18n="prefs.save"></button></div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><h2 class="panel-title" data-i18n="updates.title"></h2></div>
+          <div class="row">
+            <div class="row-text"><label class="row-title" for="automatic-update-checks" data-i18n="updates.auto"></label><p class="muted" data-i18n="updates.autoHint"></p></div>
+            <input id="automatic-update-checks" class="checkbox" type="checkbox" data-i18n-label="updates.autoLabel">
+          </div>
+          <div class="row">
+            <div class="row-text">
+              <span id="update-current-version" class="row-title"></span>
+              <p id="update-status" class="muted" role="status" aria-live="polite"></p>
+              <progress id="update-progress" max="100" hidden data-i18n-label="updates.progress"></progress>
+              <p id="update-notes" class="muted update-notes" hidden></p>
+            </div>
+            <div class="actions"><button id="check-updates" class="button" data-i18n="updates.check"></button><button id="install-update" class="button" data-i18n="updates.install" hidden></button></div>
+          </div>
         </div>
       </section>
+
       <section id="page-exclusions" class="page" hidden>
-        <div class="eyebrow" data-i18n="apps.eyebrow"></div><h1 data-i18n="apps.title"></h1><p class="intro" data-i18n="apps.intro"></p>
-        <div class="panel app-form"><label for="app-id" data-i18n="apps.identifier"></label><div class="app-controls"><input id="app-id" data-i18n-placeholder="apps.placeholder" maxlength="500" spellcheck="false"><select id="app-rule" data-i18n-label="apps.rule"><option value="exclude" data-i18n="apps.exclude"></option><option value="allow" data-i18n="apps.allow"></option></select><button id="add-app" class="button primary" data-i18n="apps.add"></button></div><p class="muted" data-i18n="apps.help"></p></div>
-        <div class="panel"><div class="section-heading"><h2 data-i18n="apps.yours"></h2><span id="rule-count" class="muted"></span></div><div id="custom-apps" class="app-list"></div></div>
-        <details class="panel default-apps"><summary><span data-i18n="apps.defaults"></span> <span class="muted" data-i18n="apps.defaultsHint"></span></summary><div id="default-apps" class="app-list"></div></details>
+        <header class="page-header"><h1 data-i18n="nav.exclusions"></h1><p data-i18n="apps.intro"></p></header>
+        <div class="panel">
+          <div class="panel-header"><h2 class="panel-title" data-i18n="apps.yours"></h2><span id="rule-count" class="muted"></span></div>
+          <div class="form-block">
+            <label class="row-title" for="app-id" data-i18n="apps.identifier"></label>
+            <div class="field-group"><input id="app-id" data-i18n-placeholder="apps.placeholder" maxlength="500" spellcheck="false"><select id="app-rule" data-i18n-label="apps.rule"><option value="exclude" data-i18n="apps.exclude"></option><option value="allow" data-i18n="apps.allow"></option></select><button id="add-app" class="button primary" data-i18n="apps.add"></button></div>
+            <p class="muted" data-i18n="apps.help"></p>
+          </div>
+          <div id="custom-apps" class="list"></div>
+        </div>
+        <details class="panel">
+          <summary class="panel-title" data-i18n="apps.defaults"></summary>
+          <div id="default-apps" class="list"></div>
+        </details>
       </section>
+
       <section id="page-words" class="page" hidden>
-        <div class="eyebrow" data-i18n="words.eyebrow"></div><h1 data-i18n="words.title"></h1><p class="intro" data-i18n="words.intro"></p>
-        <div class="panel"><div class="preference-row"><div><h2 data-i18n="words.learn"></h2><p data-i18n="words.learnHint"></p></div><input id="learn-from-undo" class="checkbox" type="checkbox" data-i18n-label="words.learn"></div></div>
-        <div class="panel app-form"><label for="word-entry" data-i18n="words.word"></label><div class="app-controls"><input id="word-entry" data-i18n-placeholder="words.placeholder" maxlength="64" autocomplete="off" spellcheck="false" autocapitalize="off"><button id="add-word" class="button primary" data-i18n="apps.add"></button></div><p class="muted" data-i18n="words.help"></p></div>
-        <div class="panel"><div class="section-heading"><h2 data-i18n="words.yours"></h2><span><span id="word-count" class="muted"></span> <button id="clear-words" class="text-button" data-i18n="words.clear" hidden></button></span></div><div id="word-list" class="app-list"></div></div>
+        <header class="page-header"><h1 data-i18n="nav.words"></h1><p data-i18n="words.intro"></p></header>
+        <div class="panel">
+          <div class="row">
+            <div class="row-text"><label class="row-title" for="learn-from-undo" data-i18n="words.learn"></label><p class="muted" data-i18n="words.learnHint"></p></div>
+            <input id="learn-from-undo" class="checkbox" type="checkbox" data-i18n-label="words.learn">
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><h2 class="panel-title" data-i18n="words.yours"></h2><span class="actions"><span id="word-count" class="muted"></span><button id="clear-words" class="text-button" data-i18n="words.clear" hidden></button></span></div>
+          <div class="form-block">
+            <label class="row-title" for="word-entry" data-i18n="words.word"></label>
+            <div class="field-group"><input id="word-entry" data-i18n-placeholder="words.placeholder" maxlength="64" autocomplete="off" spellcheck="false" autocapitalize="off"><button id="add-word" class="button primary" data-i18n="apps.add"></button></div>
+            <p class="muted" data-i18n="words.help"></p>
+          </div>
+          <div id="word-list" class="list"></div>
+        </div>
       </section>
+
       <section id="page-about" class="page" hidden>
-        <div class="eyebrow" data-i18n="about.eyebrow"></div><h1 data-i18n="about.title"></h1><p class="intro" data-i18n="about.intro"></p>
-        <div class="panel privacy-details"><h2 data-i18n="about.localTitle"></h2><p data-i18n="about.local"></p><h2 data-i18n="about.updatesTitle"></h2><p data-i18n="about.updates"></p><h2 data-i18n="about.needsTitle"></h2><p data-i18n="about.needs"></p><h2 data-i18n="about.boundsTitle"></h2><p data-i18n="about.bounds"></p><h2 data-i18n="about.openTitle"></h2><p data-i18n="about.open"></p><div class="about-version"><span id="about-version">CodeSwitch 0.1.0</span><span data-i18n="about.pair"></span></div></div>
+        <header class="page-header"><h1 data-i18n="nav.about"></h1><p data-i18n="about.intro"></p></header>
+        <div class="panel">
+          <div class="row stacked"><h2 class="row-title" data-i18n="about.localTitle"></h2><p data-i18n="about.local"></p></div>
+          <div class="row stacked"><h2 class="row-title" data-i18n="about.updatesTitle"></h2><p data-i18n="about.updates"></p></div>
+          <div class="row stacked"><h2 class="row-title" data-i18n="about.needsTitle"></h2><p data-i18n="about.needs"></p></div>
+          <div class="row stacked"><h2 class="row-title" data-i18n="about.boundsTitle"></h2><p data-i18n="about.bounds"></p></div>
+          <div class="row stacked"><h2 class="row-title" data-i18n="about.openTitle"></h2><p data-i18n="about.open"></p></div>
+          <div class="row"><span id="about-version" class="muted">CodeSwitch 0.1.0</span></div>
+        </div>
       </section>
-      <div id="toast" class="toast" role="status" hidden></div>
     </main>
+    <div id="toast" class="toast" role="status" hidden></div>
   </div>`;
 
 let currentPage = "overview";
@@ -172,8 +229,6 @@ function showPage(page: string) {
     button.classList.toggle("selected", selected);
     button.setAttribute("aria-current", selected ? "page" : "false");
   });
-  const titles: Record<string, Key> = { overview: "nav.overview", preferences: "nav.preferences", exclusions: "nav.exclusions", words: "nav.words", about: "nav.about" };
-  element("page-title").textContent = t(titles[page] ?? "nav.overview");
   document.querySelector("main")?.scrollTo(0, 0);
 }
 document.querySelectorAll<HTMLButtonElement>("[data-page]").forEach((button) => button.addEventListener("click", () => showPage(button.dataset.page ?? "overview")));
@@ -200,26 +255,17 @@ function render() {
   toggle.disabled = saving || status.state === "updating" || (!settings.enabled && !canEnable);
   const states = ["paused", "active", "updating", "needs-permission", "unsupported-field", "excluded-app", "suspended-app"];
   const current = settings.enabled ? t(states.includes(status.state) ? `state.${status.state}` as Key : "state.active") : t("state.paused");
-  element("status").innerHTML = "<i></i>";
-  element("status").append(document.createTextNode(current));
+  element("status").textContent = current;
   element("status").classList.toggle("active", settings.enabled && status.state === "active");
-  const count = element("correction-count");
-  if (status.corrections > 0) count.textContent = t("count.corrected", { n: status.corrections, words: plural(status.corrections, "word") });
-  else count.replaceChildren(`${t("pair.english")} `, Object.assign(document.createElement("span"), { className: "pair-arrow", textContent: "↔" }), ` ${t("pair.russian")}`);
-  element("correction-description").textContent = t(status.state === "updating" ? "control.updating" : settings.enabled ? "control.watching" : canEnable ? "control.ready" : "control.paused");
+  element("correction-count").textContent = status.corrections > 0 ? t("count.corrected", { n: status.corrections, words: plural(status.corrections, "word") }) : "";
   element("browser-notice").hidden = native;
   element("setup").hidden = settings.onboardingComplete && status.permissionGranted && layouts && available;
   const ready = Number(status.permissionGranted) + Number(layouts);
   element("setup-progress").textContent = t("setup.progress", { n: ready });
-  for (const [id, complete, number] of [["permission-check", status.permissionGranted, "1"], ["layout-check", layouts, "2"]] as const) {
-    element(id).innerHTML = complete ? icon("check") : number;
-    element(id).classList.toggle("complete", complete);
-  }
   const permission = element<HTMLButtonElement>("permission");
   permission.disabled = !native || status.permissionGranted;
   const windows = status.platform === "windows";
-  if (status.permissionGranted) permission.textContent = t("setup.allowed");
-  else permission.innerHTML = `${t(windows ? "setup.check" : "setup.grant")} ${icon("chevron")}`;
+  permission.textContent = t(status.permissionGranted ? "setup.allowed" : windows ? "setup.check" : "setup.grant");
   element("permission-description").textContent = t(!native ? "setup.permissionIntro" : windows ? "setup.permissionWindows" : "setup.permissionMac");
   element("layout-description").textContent = !native ? t("setup.layoutsIntro") : `${t(windows ? "setup.layoutEnWin" : "setup.layoutEnMac")} ${status.englishInstalled ? "✓" : t("setup.missing")} · ${t(windows ? "setup.layoutRuWin" : "setup.layoutRuMac")} ${status.russianInstalled ? "✓" : t("setup.missing")}`;
   element("layout-instructions").textContent = t(windows ? "setup.helpWindows" : "setup.helpMac");
@@ -269,7 +315,7 @@ function renderSuspended() {
   const container = element("suspended");
   container.replaceChildren();
   for (const app of status.suspendedApps) {
-    const notice = document.createElement("div"); notice.className = "notice update-notice";
+    const notice = document.createElement("div"); notice.className = "notice";
     const text = document.createElement("span");
     const name = document.createElement("code"); name.textContent = app;
     text.append(t("suspended.before"), name, t("suspended.after"));
@@ -288,9 +334,9 @@ function renderWords() {
   element("clear-words").hidden = !words.length;
   element<HTMLButtonElement>("clear-words").disabled = !native || saving;
   const list = element("word-list"); list.replaceChildren();
-  if (!words.length) { const note = document.createElement("p"); note.className = "muted empty-state"; note.textContent = t("words.empty"); list.append(note); }
+  if (!words.length) { const note = document.createElement("p"); note.className = "row muted"; note.textContent = t("words.empty"); list.append(note); }
   for (const word of [...words].reverse()) {
-    const row = document.createElement("div"); row.className = "app-row";
+    const row = document.createElement("div"); row.className = "row";
     const name = document.createElement("code"); name.textContent = word;
     const remove = document.createElement("button"); remove.className = "text-button"; remove.textContent = t("apps.remove"); remove.disabled = saving;
     remove.addEventListener("click", () => { void update({ ignoredWords: status.settings.ignoredWords.filter((item) => item !== word) }); });
@@ -301,7 +347,7 @@ function renderWords() {
 function renderUpdates() {
   const update = status.updates;
   const busy = ["checking", "downloading", "installing"].includes(update.phase);
-  for (const id of ["app-version", "about-version"]) element(id).textContent = `CodeSwitch ${status.version}`;
+  element("about-version").textContent = `CodeSwitch ${status.version}`;
   element("update-current-version").textContent = t("updates.installed", { v: status.version });
   element<HTMLInputElement>("automatic-update-checks").checked = status.settings.automaticUpdateChecks;
   element<HTMLInputElement>("automatic-update-checks").disabled = !native || saving;
@@ -314,7 +360,7 @@ function renderUpdates() {
     available: t("updates.available", { v: update.version ?? "" }), downloading: t("updates.downloading"),
     installing: t("updates.installing"),
   };
-  element("update-status").textContent = update.message ?? labels[update.phase] ?? t("updates.idle");
+  element("update-status").textContent = update.message ?? labels[update.phase] ?? "";
   element("update-notes").textContent = update.notes;
   element("update-notes").hidden = !update.notes;
   const progress = element<HTMLProgressElement>("update-progress");
@@ -333,18 +379,18 @@ function renderApps() {
   custom.replaceChildren();
   const rules = [...status.settings.excludedApps.map((app) => ({ app, rule: t("apps.excluded") })), ...status.settings.allowedApps.map((app) => ({ app, rule: t("apps.allowed") }))];
   element("rule-count").textContent = `${rules.length} ${plural(rules.length, "rule")}`;
-  if (!rules.length) { const note = document.createElement("p"); note.className = "muted empty-state"; note.textContent = t("apps.empty"); custom.append(note); }
+  if (!rules.length) { const note = document.createElement("p"); note.className = "row muted"; note.textContent = t("apps.empty"); custom.append(note); }
   for (const entry of rules) {
-    const row = document.createElement("div"); row.className = "app-row";
+    const row = document.createElement("div"); row.className = "row";
     const name = document.createElement("code"); name.textContent = entry.app;
-    const badge = document.createElement("span"); badge.className = "app-badge"; badge.textContent = entry.rule;
+    const badge = document.createElement("span"); badge.className = "muted"; badge.textContent = entry.rule;
     const remove = document.createElement("button"); remove.className = "text-button"; remove.textContent = t("apps.remove"); remove.disabled = saving;
     remove.addEventListener("click", () => { void update({ excludedApps: status.settings.excludedApps.filter((app) => app !== entry.app), allowedApps: status.settings.allowedApps.filter((app) => app !== entry.app) }); });
     row.append(name, badge, remove); custom.append(row);
   }
   const defaults = element("default-apps"); defaults.replaceChildren();
   for (const app of status.defaultExclusions) {
-    const row = document.createElement("div"); row.className = "app-row";
+    const row = document.createElement("div"); row.className = "row";
     const name = document.createElement("code"); name.textContent = app;
     const allow = document.createElement("button"); allow.className = "text-button";
     const allowed = status.settings.allowedApps.some((item) => item.toLowerCase() === app.toLowerCase());
@@ -375,7 +421,11 @@ element("enabled").addEventListener("click", () => { void update({ enabled: !sta
 element("permission").addEventListener("click", () => {
   void invoke("request_permission").then(() => refresh()).catch((cause) => error(String(cause)));
 });
-element("layout-help").addEventListener("click", () => { element("layout-instructions").hidden = !element("layout-instructions").hidden; });
+element("layout-help").addEventListener("click", () => {
+  const instructions = element("layout-instructions");
+  instructions.hidden = !instructions.hidden;
+  element("layout-help").setAttribute("aria-expanded", String(!instructions.hidden));
+});
 element("finish-setup").addEventListener("click", () => { void update({ onboardingComplete: true }).then((saved) => { if (saved) toast(t("setup.toast")); }); });
 element("preview-consent").addEventListener("change", () => {
   const checked = element<HTMLInputElement>("preview-consent").checked;
